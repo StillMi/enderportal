@@ -1,6 +1,6 @@
 package com.example.enderportal.client;
 
-import com.example.enderportal.EnderPortal;
+import com.example.enderportal.item.AbstractPortalStoneItem;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -38,7 +38,8 @@ public class ChannelHud implements LayeredDraw.Layer {
         }
 
         ItemStack using = player.getUseItem();
-        if (!using.is(EnderPortal.PORTAL_STONE.get())) {
+        // 按类型判断，而不是按具体物品：以后再加传送石也不用改这里
+        if (!(using.getItem() instanceof AbstractPortalStoneItem)) {
             return;
         }
 

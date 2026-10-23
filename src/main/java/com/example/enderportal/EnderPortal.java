@@ -53,7 +53,7 @@ public class EnderPortal {
             new Item.Properties().durability(AbstractPortalStoneItem.MAX_USES).rarity(Rarity.RARE));
 
     /**
-     * 地牢传送石：配方是末影传送石 + 烈焰粉 + 金锭（见 data/enderportal/recipe）。
+     * 地牢传送石：配方是 8 块金锭 + 1 颗末影珍珠（见 data/enderportal/recipe）。
      * 和末影传送石共用引导 / 冷却 / 耐久机制，只是另一端落在附近的地牢里。
      */
     public static final DeferredItem<DungeonPortalStoneItem> DUNGEON_PORTAL_STONE = ITEMS.registerItem(

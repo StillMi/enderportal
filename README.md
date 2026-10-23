@@ -1,10 +1,14 @@
-# 末影传送石 (Ender Portal Stone) v1.04
+# 末影传送石 (Ender Portal Stone) v1.05
 
 一个 Minecraft **1.21.1 / NeoForge 21.1.x** 小模组：用 8 块黑曜石 + 1 颗末影珍珠合成一颗"石头"，
 **长按右键引导 4 秒**（屏幕下方有进度条）后，在**你鼠标瞄准的位置**与**另一个生物群系**之间
 打开一对相通的「台阶 + 高台 + 传送门」，往返 2 次后自动失效，每次使用有 1 分钟冷却。
 一块传送石最多只能开门 **3 次**，用完即毁；每次新开门，上一座还没失效的门会自动消散。
 
+> **v1.05 修复**：地牢传送石**没有引导进度条**（HUD 里写死了只认末影传送石，
+> 现在改成按类型判断）；地牢搜索半径默认从 8 区块提到 **16 区块**（上限 32）；
+> 合成表改成 **8 块金锭 + 1 颗末影珍珠**。
+>
 > **v1.04 新增**：第二件物品 **地牢传送石**（紫色宝石 + 一圈火焰）。
 > 引导 / 冷却 / 次数 / 失效规则和末影传送石完全一样，只是另一端不再跑几百上千格去找别的群系，
 > 而是**在你附近找一个真正的地牢（原版刷怪房）**，把门开在地牢房间里。
@@ -20,8 +24,8 @@
 | | 末影传送石 | 地牢传送石 |
 | --- | --- | --- |
 | 图标 | 灰紫色石头 + 末影珍珠 | **紫色宝石 + 一圈火焰** |
-| 合成 | 8 黑曜石 + 1 末影珍珠 | **4 烈焰粉 + 4 金锭 + 1 末影传送石** |
-| 另一端 | 256~2048 格外**另一个群系** | 附近**地牢**里（默认半径 8 区块 = 128 格） |
+| 合成 | 8 黑曜石 + 1 末影珍珠 | **8 金锭 + 1 末影珍珠** |
+| 另一端 | 256~2048 格外**另一个群系** | 附近**地牢**里（默认半径 16 区块 = 256 格） |
 | 地牢那一端结构 | 完整「台阶 + 高台 + 门」 | **紧凑版**：门框直接嵌进地牢的墙（房间只有 3 格高，塞不下高台） |
 | 稀有度 | RARE | EPIC |
 | 引导 / 冷却 / 次数 | 4 秒 / 60 秒 / 3 次 | 完全相同 |
@@ -33,14 +37,14 @@
 | 项目 | 数值 |
 | --- | --- |
 | 合成（末影传送石） | 3×3 工作台：8 块黑曜石围一圈，中间 1 颗末影珍珠 |
-| 合成（地牢传送石） | 3×3 工作台：4 烈焰粉在四角 + 4 金锭在四边 + 中间 1 颗末影传送石 |
+| 合成（地牢传送石） | 3×3 工作台：8 块金锭围一圈，中间 1 颗末影珍珠 |
 | **引导时间** | **4 秒**（可配置），长按右键，中途松手即中断、不消耗次数 |
 | 引导进度条 | 屏幕下方居中显示，带百分比；数据来自原版同步状态，无需额外网络包 |
 | **开门位置** | **鼠标瞄准的方块**（最远 24 格，可配置）；悬空则自动落到最近的地面 |
 | 开门次数 | **3 次**，每成功开一次门消耗 1 次；3 次用完后**物品消失**（创造模式不消耗） |
 | 冷却 | 60 秒（可配置） |
 | 传送门另一端（末影） | 距玩家 256 ~ 2048 格、**与当前群系不同**的生物群系 |
-| 传送门另一端（地牢） | 附近**已加载区块**里的地牢，默认搜索半径 8 区块 |
+| 传送门另一端（地牢） | 附近**已加载区块**里的地牢，默认搜索半径 16 区块 |
 | 可用次数 | 每对门 2 次往返（= 4 次单程穿行，可配置） |
 | 次数用尽 | 两端**整座门连高台和台阶一起消失**，不留遗迹 |
 | 被破坏 | 失效前任意组成方块被破坏 → **立即整对失效**，同样不留遗迹 |
@@ -173,7 +177,7 @@
 1. `File → Open` 选择本目录（`enderportal`），以 Gradle 项目导入。
 2. 等待依赖下载完成（首次会从 `maven.neoforged.net` 拉取 NeoForge）。
 3. 右侧 Gradle 面板 → `Tasks → neoforge runs → runClient` 启动开发客户端。
-4. `Tasks → build → build` 生成 `build/libs/enderportal-1.04.jar`，丢进 `mods/` 即可。
+4. `Tasks → build → build` 生成 `build/libs/enderportal-1.05.jar`，丢进 `mods/` 即可。
 
 ### 方式 B：命令行（Gradle）
 
@@ -189,7 +193,7 @@ Gradle 在某些环境里起不来（`native-platform.dll` 加载失败）时，
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\compile.ps1   # 调 JBR 的 javac 直接编译 -> build\classes
-python tools\package.py                                      # 把 class + 资源打成 jar -> build\libs\enderportal-1.04.jar
+python tools\package.py                                      # 把 class + 资源打成 jar -> build\libs\enderportal-1.05.jar
 ```
 
 > `compile.ps1` 必须带 UTF-8 BOM 保存，否则 Windows PowerShell 5.1 会按 GBK 解析中文注释而报语法错。
@@ -199,9 +203,9 @@ python tools\package.py                                      # 把 class + 资�
 `tools\package.py` 会把 `neoforge.mods.toml` / `pack.mcmeta` 里的 `${...}` 用 `gradle.properties`
 展开，并固定 zip 时间戳，所以同样的输入永远得到同样的 jar（可复现）。
 
-产物：`build/libs/enderportal-1.04.jar`（装到 NeoForge 21.1.x 的 `mods` 目录）。
+产物：`build/libs/enderportal-1.05.jar`（装到 NeoForge 21.1.x 的 `mods` 目录）。
 
-> **本工程已经预置了一个编译好的成品**：`build/libs/enderportal-1.04.jar`
+> **本工程已经预置了一个编译好的成品**：`build/libs/enderportal-1.05.jar`
 > （35 个条目，class 全部是 Java 21 字节码，已用 `javac --release 21` 对真实
 > NeoForge 21.1.72 类路径编译通过，zip 完整性和 class 哈希都已核对）。
 > 重新构建会覆盖它。放到 `.minecraft/mods/` 里、启动 NeoForge 21.1.x 即可加载。
@@ -269,7 +273,7 @@ ModDevGradle 是 NeoForge 官方现在主推的构建插件，插件本体发布
 2. 把 `tools/build.gradle.moddev` 复制成根目录的 `build.gradle`
 3. 重新同步 / `.\gradlew build`
 
-两种构建脚本的产物完全一样（`build/libs/enderportal-1.04.jar`），代码不用改一行。
+两种构建脚本的产物完全一样（`build/libs/enderportal-1.05.jar`），代码不用改一行。
 
 ### 其他常见报错
 
@@ -300,14 +304,15 @@ ModDevGradle 是 NeoForge 官方现在主推的构建插件，插件本体发布
     # 门开在视线瞄准的位置，这是瞄准的最大距离（格）
     aimDistance = 24
     # 地牢传送石在玩家周围多少个区块内找地牢（1 区块 = 16 格）
-    dungeonSearchChunks = 8
+    dungeonSearchChunks = 16
 ```
 
 想改成"只能往返一次"就把 `roundTrips` 设成 1；想缩短引导就把 `channelSeconds` 改小
 （客户端进度条会自动跟着变，因为进度是按 `getUseDuration` 算的）。
 `aimDistance` 调大就能把门开得更远（最大 64 格，即原版区块渲染距离内）。
-`dungeonSearchChunks` 调大能扩大地牢搜索范围（最大 16 区块 = 256 格），
-但只有**已加载**的区块会被扫到，所以实际范围还受视野/模拟距离限制。
+`dungeonSearchChunks` 调大能扩大地牢搜索范围（默认 16 区块 = 256 格，最大 32 区块），
+但只有**已加载**的区块会被扫到，所以实际范围还受视野/模拟距离限制
+（默认视野 10~12 区块时，16 区块的半径已经能把加载中的区块全扫一遍）。
 
 ---
 
@@ -409,7 +414,7 @@ src/main/java/com/example/enderportal/
 | 换合成配方 | `data/enderportal/recipe/portal_stone.json`、`recipe/dungeon_portal_stone.json` |
 | 换贴图 | `assets/enderportal/textures/item/portal_stone.png`、`item/dungeon_portal_stone.png`、`textures/block/remote_portal.png`（16×16） |
 | 改来源文案 | `assets/enderportal/lang/zh_cn.json` 的 `tooltip.enderportal.portal_stone.lore` / `tooltip.enderportal.dungeon_stone.lore` |
-| 改地牢搜索半径 | `config/enderportal-common.toml` 的 `dungeonSearchChunks`（默认 8 区块，最大 16） |
+| 改地牢搜索半径 | `config/enderportal-common.toml` 的 `dungeonSearchChunks`（默认 16 区块，最大 32） |
 | 改地牢判定 | `DungeonFinder.MIN_FLOOR_TILES`（脚下要有几块圆石才算地牢） |
 | 让地牢那一端也用完整结构 | `PortalManager.openDungeonPortalPair` 里第二次 `placeStructure` 的 `false` 改成 `true` |
 
@@ -417,7 +422,7 @@ src/main/java/com/example/enderportal/
 
 ## 7. 已知情况（重要）
 
-- **v1.04 的代码已用 `javac --release 21` 对真实的 NeoForge 21.1.72 类路径编译通过**
+- **v1.05 的代码已用 `javac --release 21` 对真实的 NeoForge 21.1.72 类路径编译通过**
   （12 个源文件 → 19 个 class，`-Xlint:all` 无警告），jar 也已按同一份 class 打包。
   但**没有进游戏实测**（沙箱里 Gradle 无法启动，也起不了客户端），
   所以"瞄准点吸附到地面"的实际手感、结构生成位置、地牢定位的命中率、进度条位置、
