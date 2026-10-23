@@ -49,7 +49,8 @@ if (!(using.getItem() instanceof AbstractPortalStoneItem)) return;
 ## 构建产物
 
 - `enderportal-1.05.jar`
-- 与 v1.04 一样：35 个条目，class 全部是 Java 21 字节码
+- 35 个条目，46,864 字节，class 全部是 Java 21 字节码
+- SHA256 `d9dc11d8c6e40eab3c21db681894c7e8ad20253f213ae45bd4b5d74b1153c539`
 
 ## 安装
 
