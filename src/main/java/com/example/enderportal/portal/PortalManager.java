@@ -34,6 +34,7 @@ import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * 传送门的生成 / 传送 / 失效逻辑。
@@ -210,9 +211,10 @@ public final class PortalManager {
         }
 
         int uses = Math.max(2, Config.ROUND_TRIPS.get() * 2);
+        UUID creator = player.getUUID();
         closePrevious(level, player);
-        placeStructure(level, near.origin(), near.front(), target, near.front(), uses, true);
-        placeStructure(level, target, near.front(), near.origin(), near.front(), uses, true);
+        placeStructure(level, near.origin(), near.front(), target, near.front(), creator, uses, true);
+        placeStructure(level, target, near.front(), near.origin(), near.front(), creator, uses, true);
         remember(level, player, near.origin(), near.front(), target, near.front());
 
         Component biomeName = biomeName(level, target);
@@ -267,11 +269,12 @@ public final class PortalManager {
         Direction front = dungeon.front();
 
         int uses = Math.max(2, Config.ROUND_TRIPS.get() * 2);
+        UUID creator = player.getUUID();
         closePrevious(level, player);
 
         // 地牢那一端用紧凑结构：只有门框 + 门面，没有高台和台阶
-        placeStructure(level, dungeonOrigin, front, near.origin(), near.front(), uses, false);
-        placeStructure(level, near.origin(), near.front(), dungeonOrigin, front, uses, true);
+        placeStructure(level, dungeonOrigin, front, near.origin(), near.front(), creator, uses, false);
+        placeStructure(level, near.origin(), near.front(), dungeonOrigin, front, creator, uses, true);
 
         // 兜底：万一还是被覆盖了，别把半座门留给玩家
         if (!isStructureIntact(level, near.origin(), near.front())
@@ -466,20 +469,46 @@ public final class PortalManager {
     }
 
     /**
-     * 消耗一次使用次数；次数归零时两端整座门一起消失。
+     * 扣掉 {@code actor} 的一次使用次数，并把计数同步到两端。
      *
-     * @return 剩余次数
+     * <p>次数是按人分开算的：只有<b>创造者</b>的计数归零才会拆掉整座门；
+     * 其他玩家归零只是自己不能再传送，门继续开着。</p>
+     *
+     * @param actor 使用者（玩家 UUID，或非玩家实体共用的
+     *              {@link RemotePortalBlockEntity#SHARED_ACTOR}）
+     * @return 使用者扣完之后还剩几次；0 表示这次用完了
      */
     public static int consumeUse(ServerLevel level, BlockPos origin, Direction front,
-                                 BlockPos partner, Direction partnerFront) {
-        int left = Math.max(0, getRemaining(level, origin, front) - 1);
-        if (left <= 0) {
+                                 BlockPos partner, Direction partnerFront, UUID actor) {
+        RemotePortalBlockEntity source = firstPortal(level, origin, front);
+        if (source == null) {
+            return 0;
+        }
+
+        int left = Math.max(0, source.leftFor(actor) - 1);
+        source.setLeftFor(actor, left);
+
+        // 两端各 6 个方块都存着一份计数，必须一起更新，
+        // 否则从另一端进出时读到的还是旧数字
+        applyUsage(level, origin, front, source);
+        applyUsage(level, partner, partnerFront, source);
+
+        if (left <= 0 && actor.equals(source.getCreator())) {
             invalidate(level, origin, front, partner, partnerFront);
             return 0;
         }
-        setRemaining(level, origin, front, left);
-        setRemaining(level, partner, partnerFront, left);
         return left;
+    }
+
+    /** 把某一端的 6 个门方块实体的计数全部对齐到 {@code source}。 */
+    private static void applyUsage(ServerLevel level, BlockPos origin, Direction front,
+                                   RemotePortalBlockEntity source) {
+        ensureChunks(level, origin, front);
+        for (BlockPos pos : portalBlocks(origin, front)) {
+            if (level.getBlockEntity(pos) instanceof RemotePortalBlockEntity portal && portal != source) {
+                portal.copyUsageFrom(source);
+            }
+        }
     }
 
     /**
@@ -821,21 +850,21 @@ public final class PortalManager {
      *                 {@code false} 为紧凑版（只有门框 + 门面），给地牢这种室内空间用
      */
     private static void placeStructure(ServerLevel level, BlockPos origin, Direction front,
-                                       BlockPos partnerOrigin, Direction partnerFront, int uses,
-                                       boolean platform) {
+                                       BlockPos partnerOrigin, Direction partnerFront,
+                                       UUID creator, int uses, boolean platform) {
         // 建门期间不许因为"方块被覆盖"而自我失效，见 building 的注释
         boolean previousBuilding = building;
         building = true;
         try {
-            doPlaceStructure(level, origin, front, partnerOrigin, partnerFront, uses, platform);
+            doPlaceStructure(level, origin, front, partnerOrigin, partnerFront, creator, uses, platform);
         } finally {
             building = previousBuilding;
         }
     }
 
     private static void doPlaceStructure(ServerLevel level, BlockPos origin, Direction front,
-                                         BlockPos partnerOrigin, Direction partnerFront, int uses,
-                                         boolean platform) {
+                                         BlockPos partnerOrigin, Direction partnerFront,
+                                         UUID creator, int uses, boolean platform) {
         ensureChunks(level, origin, front);
 
         BlockState air = Blocks.AIR.defaultBlockState();
@@ -878,7 +907,7 @@ public final class PortalManager {
             level.setBlockAndUpdate(piece.pos(), piece.state());
             if (piece.state().is(EnderPortal.REMOTE_PORTAL.get())
                     && level.getBlockEntity(piece.pos()) instanceof RemotePortalBlockEntity portal) {
-                portal.configure(origin, front, partnerOrigin, partnerFront, uses);
+                portal.configure(origin, front, partnerOrigin, partnerFront, creator, uses);
             }
         }
 
@@ -1046,21 +1075,19 @@ public final class PortalManager {
         }
     }
 
-    public static int getRemaining(ServerLevel level, BlockPos origin, Direction front) {
+    /** 这一端第一个配置好的门方块实体；没有返回 {@code null}。 */
+    private static RemotePortalBlockEntity firstPortal(ServerLevel level, BlockPos origin, Direction front) {
         for (BlockPos pos : portalBlocks(origin, front)) {
             if (level.getBlockEntity(pos) instanceof RemotePortalBlockEntity portal) {
-                return portal.getRemaining();
+                return portal;
             }
         }
-        return 0;
+        return null;
     }
 
-    public static void setRemaining(ServerLevel level, BlockPos origin, Direction front, int remaining) {
-        ensureChunks(level, origin, front);
-        for (BlockPos pos : portalBlocks(origin, front)) {
-            if (level.getBlockEntity(pos) instanceof RemotePortalBlockEntity portal) {
-                portal.setRemaining(remaining);
-            }
-        }
+    /** 创造者还剩几次（决定这座门还能用多久）。 */
+    public static int getRemaining(ServerLevel level, BlockPos origin, Direction front) {
+        RemotePortalBlockEntity portal = firstPortal(level, origin, front);
+        return portal == null ? 0 : portal.getRemaining();
     }
 }

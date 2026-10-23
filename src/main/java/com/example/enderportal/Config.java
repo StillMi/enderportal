@@ -10,6 +10,7 @@ public final class Config {
 
     public static final ModConfigSpec.IntValue CHANNEL_SECONDS;
     public static final ModConfigSpec.IntValue COOLDOWN_SECONDS;
+    public static final ModConfigSpec.IntValue TELEPORT_DELAY_SECONDS;
     public static final ModConfigSpec.IntValue ROUND_TRIPS;
     public static final ModConfigSpec.IntValue MIN_DISTANCE;
     public static final ModConfigSpec.IntValue MAX_DISTANCE;
@@ -30,8 +31,14 @@ public final class Config {
                 .comment("使用传送石后的冷却时间（秒）。")
                 .defineInRange("cooldownSeconds", 60, 0, 3600);
 
+        TELEPORT_DELAY_SECONDS = builder
+                .comment("同一个人/实体传送完之后，要隔多少秒才能再次被传送门传送。",
+                        "用来避免站在门口被来回反复传送。")
+                .defineInRange("teleportDelaySeconds", 5, 0, 60);
+
         ROUND_TRIPS = builder
-                .comment("一对传送门可以往返几次，次数用尽后传送门失效。")
+                .comment("每个玩家可以往返几次。次数按人单独计算：",
+                        "创造者用完自己的次数后整座门失效，其他玩家用完则不能再传送。")
                 .defineInRange("roundTrips", 2, 1, 32);
 
         MIN_DISTANCE = builder

@@ -1,10 +1,17 @@
-# 末影传送石 (Ender Portal Stone) v1.06
+# 末影传送石 (Ender Portal Stone) v1.07
 
 一个 Minecraft **1.21.1 / NeoForge 21.1.x** 小模组：用 8 块黑曜石 + 1 颗末影珍珠合成一颗"石头"，
 **长按右键引导 4 秒**（屏幕下方有进度条）后，在**你鼠标瞄准的位置**与**另一个生物群系**之间
-打开一对相通的「台阶 + 高台 + 传送门」，往返 2 次后自动失效，每次使用有 1 分钟冷却。
+打开一对相通的「台阶 + 高台 + 传送门」，**每人**往返 2 次后自动失效，每次使用有 1 分钟冷却。
 一块传送石最多只能开门 **3 次**，用完即毁；每次新开门，上一座还没失效的门会自动消散。
 
+> **v1.07 变更**：
+>
+> 1. **传送后 5 秒冷却** —— 传送完要等 5 秒才能再次被传送，避免在门口反复弹
+>    （`teleportDelaySeconds` 可配置，动作栏会显示剩余秒数）。
+> 2. **次数改成按人算** —— 每个玩家各自有 2 次往返。创造者用完后整座门失效；
+>    其他玩家用完后只是自己不能再传送，**门继续开着**，不会因为别人蹭门而缩短寿命。
+>
 > **v1.06 修复**（重要）：
 >
 > 1. **地牢传送门"生成后立刻消失"** —— 根因是覆盖方块时 `onRemove` 把"被覆盖"当成
@@ -53,8 +60,10 @@
 | 冷却 | 60 秒（可配置） |
 | 传送门另一端（末影） | 距玩家 256 ~ 2048 格、**与当前群系不同**的生物群系 |
 | 传送门另一端（地牢） | 附近**已加载区块**里的地牢，默认搜索半径 20 区块 |
-| 可用次数 | 每对门 2 次往返（= 4 次单程穿行，可配置） |
-| 次数用尽 | 两端**整座门连高台和台阶一起消失**，不留遗迹 |
+| 可用次数 | **每人** 2 次往返（= 4 次单程穿行，可配置），各算各的 |
+| 次数用尽（创造者） | 两端**整座门连高台和台阶一起消失**，不留遗迹 |
+| 次数用尽（其他人） | 这个人不能再传送，但**门还开着**；不影响门的寿命 |
+| 传送间隔 | 传送完之后要隔 **5 秒**才能再次被传送（可配置），避免在门口反复弹 |
 | 被破坏 | 失效前任意组成方块被破坏 → **立即整对失效**，同样不留遗迹 |
 | 新开一座门 | 该玩家**上一对还没失效的门立即消散**（跨维度也生效） |
 
@@ -67,7 +76,9 @@
    - **末影传送石**：一个随机选中的**不同群系**，结构相同（也是台阶 + 高台）；
    - **地牢传送石**：附近的一个**地牢**，门框直接嵌在地牢房间的墙里（没有高台和台阶）。
 3. 沿台阶走上高台、走进门 → 从对面那座门里走出来。
-4. 反复往返，次数用尽时两扇门**彻底消失**，并提示"传送门已经消散了"。
+4. 传送完要等 5 秒才能再次被传送（动作栏会显示"传送冷却中…… 3 秒"）。
+5. **次数按人算**：开门的人往返 2 次后两扇门**彻底消失**并提示"传送门已经消散了"；
+   其他玩家也能用，各自有 2 次往返，用完后只是**自己**不能再传送，门还开着。
 
 物品说明里除了功能简介，最后还有一行斜体来源文案：
 
@@ -205,17 +216,46 @@ v1.06 的修法：
 4. **自检容错**：框架自检要连续 2 次都不完整才判定失效（1 秒 → 2 秒），
    避免建门 / 区块加载瞬间的抖动误拆。
 
-### 失效规则（v1.02）
+### 失效规则
 
 | 触发条件 | 检测方式 | 结果 |
 | --- | --- | --- |
-| 往返次数用尽 | `PortalManager.consumeUse` | 两端所有组成方块全部清除 |
+| **创造者**的往返次数用尽 | `PortalManager.consumeUse` | 两端所有组成方块全部清除 |
+| 其他人的次数用尽 | `PortalManager.consumeUse` | 只有这个人不能再传送，**门继续开着** |
 | 门面方块被挖掉/炸掉/推掉 | `RemotePortalBlock.onRemove` | 立即清除两端全部方块 |
-| 黑曜石框架被挖掉 | 每秒 1 次的结构自检（ticker） | 1 秒内清除两端全部方块 |
+| 黑曜石框架被挖掉 | 每秒 1 次的结构自检（ticker） | 2 秒内清除两端全部方块 |
 | **玩家又开了一对新门** | `PortalRegistry`（存档 `enderportal_portals.dat`） | 上一对门**立即**消散 |
 
-所有路径都会**同时拆掉对面那座门**，所以不会留下"半座门"。
+所有拆除路径都会**同时拆掉对面那座门**，所以不会留下"半座门"。
 拆除只清自己放的方块（黑曜石 / 磨制黑石台阶 / 传送门方块），不会误伤玩家建筑。
+
+### 次数为什么按人算（v1.07）
+
+之前整座门只有一个共享计数器，谁用都扣同一个数字，于是：
+
+- 路过的人随便进两次，把门主的门弄没了；
+- 多人一起玩时，先到的人把次数耗光，后面的人直接没得用。
+
+现在每个门方块实体里存的是：
+
+```
+creator      : 开门那个人的 UUID
+quota        : 每个人的满额次数（roundTrips * 2）
+creatorLeft  : 创造者还剩几次        ← 这个归零，整座门失效
+othersLeft   : { 玩家UUID -> 剩余 }  ← 这里归零只影响那个人自己
+```
+
+`othersLeft` 里**没有条目 = 满额**，所以新玩家第一次用就是完整配额；
+用完的会被显式写成 `0`，从此被挡在门外。
+
+两端各 6 个门方块都存一份，每次扣次数时会把两端 12 份一起对齐
+（`PortalManager.applyUsage`），所以从哪一头进出读到的数字都一样。
+
+非玩家实体（掉落物、生物）共用一个"公共桶"（`SHARED_ACTOR = UUID(0,0)`），
+这样掉落物照常能穿过，又不会因为物品循环让计数表无限膨胀。
+
+> 兼容旧存档：v1.06 及更早的 `Remaining` 标签会在读档时自动迁移成
+> "创造者个人计数器"，行为不变，只是其他玩家从此有了自己的配额。
 
 ---
 
@@ -228,7 +268,7 @@ v1.06 的修法：
 1. `File → Open` 选择本目录（`enderportal`），以 Gradle 项目导入。
 2. 等待依赖下载完成（首次会从 `maven.neoforged.net` 拉取 NeoForge）。
 3. 右侧 Gradle 面板 → `Tasks → neoforge runs → runClient` 启动开发客户端。
-4. `Tasks → build → build` 生成 `build/libs/enderportal-1.06.jar`，丢进 `mods/` 即可。
+4. `Tasks → build → build` 生成 `build/libs/enderportal-1.07.jar`，丢进 `mods/` 即可。
 
 ### 方式 B：命令行（Gradle）
 
@@ -244,7 +284,7 @@ Gradle 在某些环境里起不来（`native-platform.dll` 加载失败）时，
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\compile.ps1   # 调 JBR 的 javac 直接编译 -> build\classes
-python tools\package.py                                      # 把 class + 资源打成 jar -> build\libs\enderportal-1.06.jar
+python tools\package.py                                      # 把 class + 资源打成 jar -> build\libs\enderportal-1.07.jar
 ```
 
 > `compile.ps1` 必须带 UTF-8 BOM 保存，否则 Windows PowerShell 5.1 会按 GBK 解析中文注释而报语法错。
@@ -254,9 +294,9 @@ python tools\package.py                                      # 把 class + 资�
 `tools\package.py` 会把 `neoforge.mods.toml` / `pack.mcmeta` 里的 `${...}` 用 `gradle.properties`
 展开，并固定 zip 时间戳，所以同样的输入永远得到同样的 jar（可复现）。
 
-产物：`build/libs/enderportal-1.06.jar`（装到 NeoForge 21.1.x 的 `mods` 目录）。
+产物：`build/libs/enderportal-1.07.jar`（装到 NeoForge 21.1.x 的 `mods` 目录）。
 
-> **本工程已经预置了一个编译好的成品**：`build/libs/enderportal-1.06.jar`
+> **本工程已经预置了一个编译好的成品**：`build/libs/enderportal-1.07.jar`
 > （36 个条目，class 全部是 Java 21 字节码，已用 `javac --release 21` 对真实
 > NeoForge 21.1.72 类路径编译通过，zip 完整性和 class 哈希都已核对）。
 > 重新构建会覆盖它。放到 `.minecraft/mods/` 里、启动 NeoForge 21.1.x 即可加载。
@@ -324,7 +364,7 @@ ModDevGradle 是 NeoForge 官方现在主推的构建插件，插件本体发布
 2. 把 `tools/build.gradle.moddev` 复制成根目录的 `build.gradle`
 3. 重新同步 / `.\gradlew build`
 
-两种构建脚本的产物完全一样（`build/libs/enderportal-1.06.jar`），代码不用改一行。
+两种构建脚本的产物完全一样（`build/libs/enderportal-1.07.jar`），代码不用改一行。
 
 ### 其他常见报错
 
@@ -346,7 +386,9 @@ ModDevGradle 是 NeoForge 官方现在主推的构建插件，插件本体发布
     channelSeconds = 4
     # 使用传送石后的冷却时间（秒）
     cooldownSeconds = 60
-    # 一对传送门可以往返几次，次数用尽后传送门失效
+    # 同一个人/实体传送完之后，要隔多少秒才能再次被传送门传送
+    teleportDelaySeconds = 5
+    # 每个玩家可以往返几次（按人单独计算）
     roundTrips = 2
     # 传送门另一端距离玩家最近多少格
     minDistance = 256
@@ -358,8 +400,11 @@ ModDevGradle 是 NeoForge 官方现在主推的构建插件，插件本体发布
     dungeonRadiusChunks = 20
 ```
 
-想改成"只能往返一次"就把 `roundTrips` 设成 1；想缩短引导就把 `channelSeconds` 改小
+想改成"只能往返一次"就把 `roundTrips` 设成 1（**每个人**都只能往返一次）；
+想缩短引导就把 `channelSeconds` 改小
 （客户端进度条会自动跟着变，因为进度是按 `getUseDuration` 算的）。
+`teleportDelaySeconds` 控制"传送完多久才能再被传送"，默认 5 秒，
+设成 0 就退回 v1.06 的 1 秒防抖行为。
 `aimDistance` 调大就能把门开得更远（最大 64 格，即原版区块渲染距离内）。
 `dungeonRadiusChunks` 调大能扩大地牢搜索范围（默认 20 区块 = 320 格，最大 48 区块），
 但只有**已加载**的区块会被扫到，所以实际范围还受视野/模拟距离限制。
@@ -385,7 +430,7 @@ src/main/java/com/example/enderportal/
 ├── block/RemotePortalBlock.java  传送门方块：entityInside 传送、onRemove 破坏即失效、
 │                                 getTicker 每秒结构自检、客户端粒子
 ├── block/RemotePortalBlockEntity.java
-│                                 保存两端原点 + 朝向 + 剩余次数；穿门时传送到对面高台
+│                                 保存两端原点 + 朝向 + 各人剩余次数；穿门时传送到对面高台
 ├── client/                       仅客户端（@EventBusSubscriber(Dist.CLIENT)）
 │   ├── ClientSetup.java          注册 HUD 图层
 │   └── ChannelHud.java           引导进度条
@@ -435,8 +480,9 @@ src/main/java/com/example/enderportal/
   `level.getChunk(x, z, ChunkStatus.BIOMES, true)` 只生成到"群系"阶段就读取群系，
   避免每个候选点都完整生成地形；确认与当前群系不同后，才真正 `getChunk` 生成地形。
 - **数据持久化**：每个传送门方块各存一份
-  `{自己原点, 自己朝向, 对面原点, 对面朝向, 剩余次数}`，区块卸载重载后依旧可用。
-- **防重复触发**：落点在门内高台上、面朝台阶，另外 `PortalCooldowns` 再做 1 秒防抖。
+  `{自己原点, 自己朝向, 对面原点, 对面朝向, 创造者, 配额, 各人剩余次数}`，区块卸载重载后依旧可用。
+- **防重复触发**：落点在门内高台上、面朝台阶，另外 `PortalCooldowns` 再做 5 秒冷却
+  （`teleportDelaySeconds`，按实体各自计时）。
 - **3 次开门**：直接复用原版耐久机制 —— `Item.Properties().durability(3)`，
   成功开门后 `stack.hurtAndBreak(1, level, player, consumer)`，`damage >= maxDamage` 时原版自动销毁物品。
 - **新门顶掉旧门**：`PortalRegistry`（主世界 `data/enderportal_portals.dat`）记录每个玩家
@@ -456,8 +502,8 @@ src/main/java/com/example/enderportal/
 | --- | --- |
 | 改成只生成一座门 | `PortalManager.openPortalPair` / `openDungeonPortalPair`：去掉其中一次 `placeStructure`，改为把玩家直接 `teleportTo` 到目标门 |
 | 改引导时间 | `config/enderportal-common.toml` 的 `channelSeconds`（进度条会自动跟着变） |
-| 改冷却时间 | `config/enderportal-common.toml` 的 `cooldownSeconds` |
-| 改往返次数 | `roundTrips`（1 = 只能往返一次） |
+| 改冷却时间 | `cooldownSeconds`（物品）/ `teleportDelaySeconds`（传送后间隔） |
+| 改往返次数 | `roundTrips`（1 = 每人只能往返一次） |
 | 改瞄准距离 | `aimDistance`（默认 24 格，最大 64） |
 | 改找地面的耐心 | `PortalManager.GROUND_SEARCH_DOWN`（往下找多少格）、`MAX_GROUND_CANDIDATES`（同列试几层）、`MAX_ANCHOR_SHIFT`（最多挪几格） |
 | 改"平地"的标准 | `PortalManager.MAX_FOOTPRINT_SPREAD`（占地范围内最大落差，默认 3） |
@@ -478,7 +524,7 @@ src/main/java/com/example/enderportal/
 
 ## 7. 已知情况（重要）
 
-- **v1.06 的代码已用 `javac --release 21` 对真实的 NeoForge 21.1.72 类路径编译通过**
+- **v1.07 的代码已用 `javac --release 21` 对真实的 NeoForge 21.1.72 类路径编译通过**
   （13 个源文件 → 20 个 class，`-Xlint:all` 无警告），jar 也已按同一份 class 打包。
   但**没有进游戏实测**（沙箱里 Gradle 无法启动，也起不了客户端），
   所以"瞄准点吸附到地面"的实际手感、结构生成位置、地牢定位的命中率、进度条位置、
