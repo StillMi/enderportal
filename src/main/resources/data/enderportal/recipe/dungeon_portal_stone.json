@@ -1,0 +1,24 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "FGF",
+    "GSG",
+    "FGF"
+  ],
+  "key": {
+    "F": {
+      "item": "minecraft:blaze_powder"
+    },
+    "G": {
+      "item": "minecraft:gold_ingot"
+    },
+    "S": {
+      "item": "enderportal:portal_stone"
+    }
+  },
+  "result": {
+    "id": "enderportal:dungeon_portal_stone",
+    "count": 1
+  }
+}

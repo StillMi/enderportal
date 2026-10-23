@@ -2,6 +2,8 @@ package com.example.enderportal;
 
 import com.example.enderportal.block.RemotePortalBlock;
 import com.example.enderportal.block.RemotePortalBlockEntity;
+import com.example.enderportal.item.AbstractPortalStoneItem;
+import com.example.enderportal.item.DungeonPortalStoneItem;
 import com.example.enderportal.item.PortalStoneItem;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.item.CreativeModeTabs;
@@ -48,7 +50,16 @@ public class EnderPortal {
     public static final DeferredItem<PortalStoneItem> PORTAL_STONE = ITEMS.registerItem(
             "portal_stone",
             PortalStoneItem::new,
-            new Item.Properties().durability(PortalStoneItem.MAX_USES).rarity(Rarity.RARE));
+            new Item.Properties().durability(AbstractPortalStoneItem.MAX_USES).rarity(Rarity.RARE));
+
+    /**
+     * 地牢传送石：配方是末影传送石 + 烈焰粉 + 金锭（见 data/enderportal/recipe）。
+     * 和末影传送石共用引导 / 冷却 / 耐久机制，只是另一端落在附近的地牢里。
+     */
+    public static final DeferredItem<DungeonPortalStoneItem> DUNGEON_PORTAL_STONE = ITEMS.registerItem(
+            "dungeon_portal_stone",
+            DungeonPortalStoneItem::new,
+            new Item.Properties().durability(AbstractPortalStoneItem.MAX_USES).rarity(Rarity.EPIC));
 
     /**
      * 传送门方块：无碰撞、自带光源、可破坏（破坏即让整对门失效），不掉落任何东西。
@@ -85,6 +96,7 @@ public class EnderPortal {
     private void addCreative(BuildCreativeModeTabContentsEvent event) {
         if (event.getTabKey() == CreativeModeTabs.TOOLS_AND_UTILITIES) {
             event.accept(new ItemStack(PORTAL_STONE.get()));
+            event.accept(new ItemStack(DUNGEON_PORTAL_STONE.get()));
         }
     }
 }

@@ -1,13 +1,30 @@
-# 末影传送石 (Ender Portal Stone) v1.03
+# 末影传送石 (Ender Portal Stone) v1.04
 
 一个 Minecraft **1.21.1 / NeoForge 21.1.x** 小模组：用 8 块黑曜石 + 1 颗末影珍珠合成一颗"石头"，
 **长按右键引导 4 秒**（屏幕下方有进度条）后，在**你鼠标瞄准的位置**与**另一个生物群系**之间
 打开一对相通的「台阶 + 高台 + 传送门」，往返 2 次后自动失效，每次使用有 1 分钟冷却。
 一块传送石最多只能开门 **3 次**，用完即毁；每次新开门，上一座还没失效的门会自动消散。
 
+> **v1.04 新增**：第二件物品 **地牢传送石**（紫色宝石 + 一圈火焰）。
+> 引导 / 冷却 / 次数 / 失效规则和末影传送石完全一样，只是另一端不再跑几百上千格去找别的群系，
+> 而是**在你附近找一个真正的地牢（原版刷怪房）**，把门开在地牢房间里。
+>
 > **v1.03 变更**：门不再固定生成在"玩家正前方"，而是生成在**视线瞄准的方块**上；
 > 瞄准点悬空（树冠、半空方块、悬崖侧壁）时会自动吸附到最近的**能站人的地面**，
 > 不会把门架在半空。
+
+---
+
+## 0. 两件物品
+
+| | 末影传送石 | 地牢传送石 |
+| --- | --- | --- |
+| 图标 | 灰紫色石头 + 末影珍珠 | **紫色宝石 + 一圈火焰** |
+| 合成 | 8 黑曜石 + 1 末影珍珠 | **4 烈焰粉 + 4 金锭 + 1 末影传送石** |
+| 另一端 | 256~2048 格外**另一个群系** | 附近**地牢**里（默认半径 8 区块 = 128 格） |
+| 地牢那一端结构 | 完整「台阶 + 高台 + 门」 | **紧凑版**：门框直接嵌进地牢的墙（房间只有 3 格高，塞不下高台） |
+| 稀有度 | RARE | EPIC |
+| 引导 / 冷却 / 次数 | 4 秒 / 60 秒 / 3 次 | 完全相同 |
 
 ---
 
@@ -15,13 +32,15 @@
 
 | 项目 | 数值 |
 | --- | --- |
-| 合成 | 3×3 工作台：8 块黑曜石围一圈，中间 1 颗末影珍珠 |
+| 合成（末影传送石） | 3×3 工作台：8 块黑曜石围一圈，中间 1 颗末影珍珠 |
+| 合成（地牢传送石） | 3×3 工作台：4 烈焰粉在四角 + 4 金锭在四边 + 中间 1 颗末影传送石 |
 | **引导时间** | **4 秒**（可配置），长按右键，中途松手即中断、不消耗次数 |
 | 引导进度条 | 屏幕下方居中显示，带百分比；数据来自原版同步状态，无需额外网络包 |
 | **开门位置** | **鼠标瞄准的方块**（最远 24 格，可配置）；悬空则自动落到最近的地面 |
 | 开门次数 | **3 次**，每成功开一次门消耗 1 次；3 次用完后**物品消失**（创造模式不消耗） |
 | 冷却 | 60 秒（可配置） |
-| 传送门另一端 | 距玩家 256 ~ 2048 格、**与当前群系不同**的生物群系 |
+| 传送门另一端（末影） | 距玩家 256 ~ 2048 格、**与当前群系不同**的生物群系 |
+| 传送门另一端（地牢） | 附近**已加载区块**里的地牢，默认搜索半径 8 区块 |
 | 可用次数 | 每对门 2 次往返（= 4 次单程穿行，可配置） |
 | 次数用尽 | 两端**整座门连高台和台阶一起消失**，不留遗迹 |
 | 被破坏 | 失效前任意组成方块被破坏 → **立即整对失效**，同样不留遗迹 |
@@ -29,14 +48,19 @@
 
 使用流程：
 
-1. 主手拿末影传送石，**用准星瞄准要开门的位置**，长按右键 4 秒，屏幕下方出现紫色进度条。
+1. 主手拿末影传送石（或地牢传送石），**用准星瞄准要开门的位置**，长按右键 4 秒，
+   屏幕下方出现紫色进度条。
 2. 引导完成后，在你瞄准的那块方块上生成一座「上行台阶 → 高台 → 传送门」的结构，
-   同时在一个随机选中的**不同群系**里生成与它相连的另一座门（结构相同）。
-3. 沿台阶走上高台、走进门 → 从对面那座门的高台上走出来，落地后面朝台阶（门外）。
+   同时在另一端生成与它相连的另一座门：
+   - **末影传送石**：一个随机选中的**不同群系**，结构相同（也是台阶 + 高台）；
+   - **地牢传送石**：附近的一个**地牢**，门框直接嵌在地牢房间的墙里（没有高台和台阶）。
+3. 沿台阶走上高台、走进门 → 从对面那座门里走出来。
 4. 反复往返，次数用尽时两扇门**彻底消失**，并提示"传送门已经消散了"。
 
 物品说明里除了功能简介，最后还有一行斜体来源文案：
-**"这块石头似乎蕴含着末影的全部力量......"**
+
+- 末影传送石：**"这块石头似乎蕴含着末影的全部力量......"**
+- 地牢传送石：**"火焰在石头表面游走，执拗地指向地底深处......"**
 
 > 设计说明：需求里写的是"生成一个传送门，可以进入和返回 2 次"。
 > 因为"返回"必须在另一端也有落脚的门，所以模组生成的是**一对互相连接的门**
@@ -86,6 +110,46 @@
 - `离得太近了` —— 玩家自己正站在结构要占的那几格上，往远处瞄或退后几步即可；
 - `没有找到合适的群系` —— 远端找不到别的群系（换位置再试）。
 
+### 地牢传送石是怎么找到地牢的
+
+**关键点：原版地牢（monster room）不是"结构"，而是"地物"。**
+`ServerLevel#findNearestMapStructure` 只认要塞、矿井、村庄这类注册在 `StructureTags` 里的结构，
+地牢根本不在那套索引里 —— 它由 `MonsterRoomFeature` 在区块生成时随机放置
+（`monster_room.json`，每个区块 10 次尝试）。所以只能**翻区块找痕迹**。
+
+判定用的是 **「刷怪笼 + 圆石地板」**：
+
+| 判据 | 阈值 | 为什么能区分 |
+| --- | --- | --- |
+| 区块里有 `SpawnerBlockEntity` | —— | 地牢中央必定有一个刷怪笼 |
+| 刷怪笼脚下 5×5 地板里圆石 / 苔石 | ≥ 6 块 | 地牢地板就是圆石和苔石 |
+| 水平四个方向 2~5 格内有一面"顶面结实"的墙 | 至少一面 | 保证门框能嵌进墙里，而不是开在空地上 |
+
+要塞是**石砖 + 蠹虫刷怪笼**、废弃矿井是**木板 + 铁轨**、下界要塞是**下界砖** ——
+脚下都不是圆石，所以这条规则不会误判成别的结构。
+
+搜索实现（`DungeonFinder`）：
+
+- 从玩家所在区块开始**一圈圈往外扫**（切比雪夫距离），扫到第一圈有结果就停，
+  所以拿到的必然是"最近那一圈里最近的"；
+- 只用 `ServerChunkCache#getChunkNow` 读**已经加载**的区块，
+  **不会**为了找地牢去同步生成新地形，所以不会卡服；
+- 区块没加载就跳过 —— 所以实际能搜到的范围取决于你的视野/模拟距离。
+
+地牢那一端为什么是"紧凑版"：地牢房间只有 5~7 格宽、**3 格高**，
+完整结构的高台 + 台阶根本放不下。所以地牢这端的门框**直接嵌进房间的墙**：
+
+```
+   顶梁  ■ ■ ■ ■   ← 天花板那一层
+   门面  ■ ▓ ▓ ■   ← 房间的空气层（3 格）
+   底梁  ■ ■ ■ ■   ← 地板那一层
+         ↑ 门正前方清一格，玩家从门口走出来就踩在地牢地板上
+```
+
+清理门前方块时会**跳过任何带方块实体的方块**，所以刷怪笼和战利品箱子不会被拆。
+
+找不到地牢时提示「附近没有找到地牢，换个地方再试。」，**不消耗次数、不进冷却**。
+
 ### 失效规则（v1.02）
 
 | 触发条件 | 检测方式 | 结果 |
@@ -109,7 +173,7 @@
 1. `File → Open` 选择本目录（`enderportal`），以 Gradle 项目导入。
 2. 等待依赖下载完成（首次会从 `maven.neoforged.net` 拉取 NeoForge）。
 3. 右侧 Gradle 面板 → `Tasks → neoforge runs → runClient` 启动开发客户端。
-4. `Tasks → build → build` 生成 `build/libs/enderportal-1.03.jar`，丢进 `mods/` 即可。
+4. `Tasks → build → build` 生成 `build/libs/enderportal-1.04.jar`，丢进 `mods/` 即可。
 
 ### 方式 B：命令行（Gradle）
 
@@ -125,7 +189,7 @@ Gradle 在某些环境里起不来（`native-platform.dll` 加载失败）时，
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\compile.ps1   # 调 JBR 的 javac 直接编译 -> build\classes
-python tools\package.py                                      # 把 class + 资源打成 jar -> build\libs\enderportal-1.03.jar
+python tools\package.py                                      # 把 class + 资源打成 jar -> build\libs\enderportal-1.04.jar
 ```
 
 > `compile.ps1` 必须带 UTF-8 BOM 保存，否则 Windows PowerShell 5.1 会按 GBK 解析中文注释而报语法错。
@@ -135,10 +199,10 @@ python tools\package.py                                      # 把 class + 资�
 `tools\package.py` 会把 `neoforge.mods.toml` / `pack.mcmeta` 里的 `${...}` 用 `gradle.properties`
 展开，并固定 zip 时间戳，所以同样的输入永远得到同样的 jar（可复现）。
 
-产物：`build/libs/enderportal-1.03.jar`（装到 NeoForge 21.1.x 的 `mods` 目录）。
+产物：`build/libs/enderportal-1.04.jar`（装到 NeoForge 21.1.x 的 `mods` 目录）。
 
-> **本工程已经预置了一个编译好的成品**：`build/libs/enderportal-1.03.jar`
-> （26 个条目，class 全部是 Java 21 字节码，已用 `javac --release 21` 对真实
+> **本工程已经预置了一个编译好的成品**：`build/libs/enderportal-1.04.jar`
+> （35 个条目，class 全部是 Java 21 字节码，已用 `javac --release 21` 对真实
 > NeoForge 21.1.72 类路径编译通过，zip 完整性和 class 哈希都已核对）。
 > 重新构建会覆盖它。放到 `.minecraft/mods/` 里、启动 NeoForge 21.1.x 即可加载。
 
@@ -205,7 +269,7 @@ ModDevGradle 是 NeoForge 官方现在主推的构建插件，插件本体发布
 2. 把 `tools/build.gradle.moddev` 复制成根目录的 `build.gradle`
 3. 重新同步 / `.\gradlew build`
 
-两种构建脚本的产物完全一样（`build/libs/enderportal-1.03.jar`），代码不用改一行。
+两种构建脚本的产物完全一样（`build/libs/enderportal-1.04.jar`），代码不用改一行。
 
 ### 其他常见报错
 
@@ -235,11 +299,15 @@ ModDevGradle 是 NeoForge 官方现在主推的构建插件，插件本体发布
     maxDistance = 2048
     # 门开在视线瞄准的位置，这是瞄准的最大距离（格）
     aimDistance = 24
+    # 地牢传送石在玩家周围多少个区块内找地牢（1 区块 = 16 格）
+    dungeonSearchChunks = 8
 ```
 
 想改成"只能往返一次"就把 `roundTrips` 设成 1；想缩短引导就把 `channelSeconds` 改小
 （客户端进度条会自动跟着变，因为进度是按 `getUseDuration` 算的）。
 `aimDistance` 调大就能把门开得更远（最大 64 格，即原版区块渲染距离内）。
+`dungeonSearchChunks` 调大能扩大地牢搜索范围（最大 16 区块 = 256 格），
+但只有**已加载**的区块会被扫到，所以实际范围还受视野/模拟距离限制。
 
 ---
 
@@ -248,9 +316,11 @@ ModDevGradle 是 NeoForge 官方现在主推的构建插件，插件本体发布
 ```
 src/main/java/com/example/enderportal/
 ├── EnderPortal.java              模组主类：注册物品 / 方块 / 方块实体 / 配置 / 创造模式物品栏
-├── Config.java                   ModConfigSpec 配置（含 channelSeconds）
-├── item/PortalStoneItem.java     长按引导：use 开始引导、finishUsingItem 才真正开门
-│                                 物品说明：功能简介 + 剩余次数 + 往返次数 + 引导时间 + 斜体来源文案
+├── Config.java                   ModConfigSpec 配置（含 channelSeconds、dungeonSearchChunks）
+├── item/
+│   ├── AbstractPortalStoneItem.java  两件传送石的公共逻辑：长按引导、冷却、扣次数、物品说明
+│   ├── PortalStoneItem.java      末影传送石：另一端开在远处另一个群系
+│   └── DungeonPortalStoneItem.java   地牢传送石：另一端开在附近的地牢里
 ├── block/RemotePortalBlock.java  传送门方块：entityInside 传送、onRemove 破坏即失效、
 │                                 getTicker 每秒结构自检、客户端粒子
 ├── block/RemotePortalBlockEntity.java
@@ -260,6 +330,7 @@ src/main/java/com/example/enderportal/
 │   └── ChannelHud.java           引导进度条
 └── portal/
     ├── PortalManager.java        视线瞄准、落地搜索、局部坐标系、群系搜索、结构搭建/拆除、次数结算
+    ├── DungeonFinder.java        翻已加载区块找地牢（刷怪笼 + 圆石地板）
     ├── PortalRegistry.java       SavedData：记录每个玩家上一对门，用于"新门顶掉旧门"
     └── PortalCooldowns.java      1 秒穿门防抖
 ```
@@ -291,6 +362,17 @@ src/main/java/com/example/enderportal/
   避免每个候选点都完整生成地形；确认与当前群系不同后，才真正 `getChunk` 生成地形。
 - **找落点**：远端同样用 `footprintSurfaces` 逐列找"能站人的地面"（不用 heightmap 的树叶/水面），
   要求周围没有岩浆，且占地范围起伏不超过 3 格（否则高台会很丑）。
+- **地牢传送石的另一端**（v1.04）：`DungeonFinder` 一圈圈扫已加载区块的
+  `LevelChunk#getBlockEntities()`，挑出 `SpawnerBlockEntity` 且脚下 5×5 有 ≥6 块圆石/苔石的
+  那个（= 原版地牢）；`PortalManager.dungeonPlacement` 再从刷怪笼水平四方向 2~5 格内找一面
+  `isFaceSturdy` 的墙，把门框**嵌进墙里**（`placeStructure(..., platform = false)` 只放门框 + 门面）。
+  清理门前空间时会跳过带方块实体的方块，所以刷怪笼和箱子不会被拆掉。
+- **搭建/拆除共用一份方块清单**（`PortalManager.pieces`）：坐标只由原点+朝向决定，
+  不依赖运行时地形，所以拆除能 100% 还原成空气，不会剩半截柱子。
+  紧凑版清单是完整版的**子集**，所以拆除永远按完整版走也不会漏。
+- **找群系**：在 256~2048 格范围内随机取 64 个候选点，用
+  `level.getChunk(x, z, ChunkStatus.BIOMES, true)` 只生成到"群系"阶段就读取群系，
+  避免每个候选点都完整生成地形；确认与当前群系不同后，才真正 `getChunk` 生成地形。
 - **数据持久化**：每个传送门方块各存一份
   `{自己原点, 自己朝向, 对面原点, 对面朝向, 剩余次数}`，区块卸载重载后依旧可用。
 - **防重复触发**：落点在门内高台上、面朝台阶，另外 `PortalCooldowns` 再做 1 秒防抖。
@@ -311,37 +393,46 @@ src/main/java/com/example/enderportal/
 
 | 需求 | 改哪里 |
 | --- | --- |
-| 改成只生成一座门 | `PortalManager.openPortalPair`：去掉其中一次 `placeStructure`，改为把玩家直接 `teleportTo` 到目标门 |
+| 改成只生成一座门 | `PortalManager.openPortalPair` / `openDungeonPortalPair`：去掉其中一次 `placeStructure`，改为把玩家直接 `teleportTo` 到目标门 |
 | 改引导时间 | `config/enderportal-common.toml` 的 `channelSeconds`（进度条会自动跟着变） |
 | 改冷却时间 | `config/enderportal-common.toml` 的 `cooldownSeconds` |
 | 改往返次数 | `roundTrips`（1 = 只能往返一次） |
 | 改瞄准距离 | `aimDistance`（默认 24 格，最大 64） |
 | 改找地面的耐心 | `PortalManager.GROUND_SEARCH_DOWN`（往下找多少格）、`MAX_GROUND_CANDIDATES`（同列试几层）、`MAX_ANCHOR_SHIFT`（最多挪几格） |
 | 改"平地"的标准 | `PortalManager.MAX_FOOTPRINT_SPREAD`（占地范围内最大落差，默认 3） |
-| 改开门次数（3 次） | `PortalStoneItem.MAX_USES`（改完需要重新构建；耐久上限在物品注册时就固定了） |
-| 改成一次性消耗品 | `PortalStoneItem.MAX_USES = 1` |
+| 改开门次数（3 次） | `AbstractPortalStoneItem.MAX_USES`（改完需要重新构建；耐久上限在物品注册时就固定了） |
+| 改成一次性消耗品 | `AbstractPortalStoneItem.MAX_USES = 1` |
 | 改高台高度 / 台阶数 | `PortalManager.PLATFORM_RISE`（台阶数会自动跟着变：`PLATFORM_RISE - 1`） |
 | 换台阶方块 | `PortalManager.pieces` 里的 `Blocks.POLISHED_BLACKSTONE_STAIRS`，记得同步改 `isOwnBlock` |
 | 改进度条位置/颜色 | `client/ChannelHud`（`BOTTOM_MARGIN`、`BAR_WIDTH`、两个颜色值） |
 | 允许同时存在多座门 | 去掉 `PortalManager.openPortalPair` 里的 `closePrevious(...)` 调用 |
-| 换合成配方 | `data/enderportal/recipe/portal_stone.json` |
-| 换贴图 | `assets/enderportal/textures/item/portal_stone.png`、`textures/block/remote_portal.png`（16×16） |
-| 改来源文案 | `assets/enderportal/lang/zh_cn.json` 的 `tooltip.enderportal.portal_stone.lore` |
+| 换合成配方 | `data/enderportal/recipe/portal_stone.json`、`recipe/dungeon_portal_stone.json` |
+| 换贴图 | `assets/enderportal/textures/item/portal_stone.png`、`item/dungeon_portal_stone.png`、`textures/block/remote_portal.png`（16×16） |
+| 改来源文案 | `assets/enderportal/lang/zh_cn.json` 的 `tooltip.enderportal.portal_stone.lore` / `tooltip.enderportal.dungeon_stone.lore` |
+| 改地牢搜索半径 | `config/enderportal-common.toml` 的 `dungeonSearchChunks`（默认 8 区块，最大 16） |
+| 改地牢判定 | `DungeonFinder.MIN_FLOOR_TILES`（脚下要有几块圆石才算地牢） |
+| 让地牢那一端也用完整结构 | `PortalManager.openDungeonPortalPair` 里第二次 `placeStructure` 的 `false` 改成 `true` |
 
 ---
 
 ## 7. 已知情况（重要）
 
-- **v1.03 的代码已用 `javac --release 21` 对真实的 NeoForge 21.1.72 类路径编译通过**
-  （10 个源文件 → 14 个 class，`-Xlint:all` 无警告），jar 也已按同一份 class 打包。
+- **v1.04 的代码已用 `javac --release 21` 对真实的 NeoForge 21.1.72 类路径编译通过**
+  （12 个源文件 → 19 个 class，`-Xlint:all` 无警告），jar 也已按同一份 class 打包。
   但**没有进游戏实测**（沙箱里 Gradle 无法启动，也起不了客户端），
-  所以"瞄准点吸附到地面"的实际手感、结构生成位置、进度条位置、粒子/音效这类体感效果
-  请以你本地实际游玩为准。
+  所以"瞄准点吸附到地面"的实际手感、结构生成位置、地牢定位的命中率、进度条位置、
+  粒子/音效这类体感效果，请以你本地实际游玩为准。
+- 地牢搜索只扫**已加载区块**，所以：
+  - 在地下挖矿、周围区块都加载着的时候最容易找到；
+  - 如果提示"附近没有找到地牢"，往别处走走（让新区块加载）再试，
+    或者把 `dungeonSearchChunks` 调大。
 - 贴图是用脚本生成的 16×16 像素图（`tools/gen_textures.py`），可以直接替换。
+  地牢传送石那张是"紫色宝石 + 一圈火焰"（火焰环 72 像素、深紫镶边 24 像素、宝石 51 像素）。
 - 传送门方块**可破坏**（硬度 0.3，无掉落物）；破坏任意一块 = 整对门失效。
   框架是黑曜石、台阶是磨制黑石台阶，挖掉同样会让整对门失效（最多 1 秒延迟）。
 - 传送石用原版耐久机制实现 3 次上限，所以物品栏里会显示一条耐久条，
   条满 = 还能开 3 次门。创造模式下不消耗次数。
 - 高台会**改动地形**（挖空 + 从地面垫起黑曜石柱），失效时这些方块会被清成空气，
   所以地面会留下一个浅坑——这是"不留遗迹"的必然结果。
+  地牢那一端是紧凑结构，**不会**挖出坑。
 

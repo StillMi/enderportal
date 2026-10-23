@@ -97,10 +97,13 @@ public final class PortalManager {
     private static final int GROUND_SEARCH_UP = 8;
     /** 结构占地范围内，每列只在参考高度上下这么多格内找地面，避免把门架在悬崖底下。 */
     private static final int FOOTPRINT_WINDOW = 4;
-    /** 占地范围内地面最大落差，超过就说明地形太陡，换个位置。 */
+    /** 结构占地范围内地面最大落差，超过就说明地形太陡，换个位置。 */
     private static final int MAX_FOOTPRINT_SPREAD = 3;
     /** 同一列上最多试几层地面（瞄准树冠时往下多试几层就能落回林地）。 */
     private static final int MAX_GROUND_CANDIDATES = 4;
+    /** 地牢那一端：门框嵌进离刷怪笼多远的墙（地牢房间半径 2~3 格）。 */
+    private static final int DUNGEON_WALL_MIN = 2;
+    private static final int DUNGEON_WALL_MAX = 5;
 
     /**
      * 拆门重入保护：拆除过程中 setBlock 会再次触发 onRemove，
@@ -153,7 +156,16 @@ public final class PortalManager {
         /** 玩家自己站在结构将要占用的位置上。 */
         TOO_CLOSE,
         /** 找不到另一个群系的落点。 */
-        NO_TARGET
+        NO_TARGET,
+        /** 附近没有找到地牢。 */
+        NO_DUNGEON
+    }
+
+    /** 近端门的落点；失败时 {@code error} 非空。 */
+    private record NearEnd(BlockPos origin, Direction front, Result error) {
+        boolean ok() {
+            return error == null;
+        }
     }
 
     /**
@@ -165,6 +177,80 @@ public final class PortalManager {
      * 避免出现"门挂在半空"。</p>
      */
     public static Result openPortalPair(ServerLevel level, ServerPlayer player) {
+        NearEnd near = resolveNearEnd(level, player);
+        if (!near.ok()) {
+            return near.error();
+        }
+
+        BlockPos target = findTarget(level, player.blockPosition(), near.front());
+        if (target == null) {
+            return Result.NO_TARGET;
+        }
+
+        int uses = Math.max(2, Config.ROUND_TRIPS.get() * 2);
+        closePrevious(level, player);
+        placeStructure(level, near.origin(), near.front(), target, near.front(), uses, true);
+        placeStructure(level, target, near.front(), near.origin(), near.front(), uses, true);
+        remember(level, player, near.origin(), near.front(), target, near.front());
+
+        Component biomeName = biomeName(level, target);
+        player.displayClientMessage(Component.translatable("message.enderportal.created",
+                biomeName, uses / 2).withStyle(ChatFormatting.LIGHT_PURPLE), false);
+
+        return Result.OK;
+    }
+
+    /**
+     * 在玩家<b>瞄准的位置</b>开一座门，另一端开在<b>附近的地牢</b>里。
+     *
+     * <p>地牢那一端不用「高台 + 台阶」，而是把门框直接嵌进地牢的墙里：
+     * 地牢房间只有 5~7 格宽、3 格高，塞不下整座高台结构，
+     * 而且玩家要的就是"落在地牢房间里"。门框底部与地牢地面齐平，
+     * 玩家从门口走出来就是地牢的地板。</p>
+     */
+    public static Result openDungeonPortalPair(ServerLevel level, ServerPlayer player) {
+        NearEnd near = resolveNearEnd(level, player);
+        if (!near.ok()) {
+            return near.error();
+        }
+
+        int radius = Math.max(1, Config.DUNGEON_SEARCH_CHUNKS.get());
+        BlockPos spawner = DungeonFinder.findNearestSpawner(level, player.blockPosition(), radius);
+        if (spawner == null) {
+            return Result.NO_DUNGEON;
+        }
+
+        NearEnd dungeon = dungeonPlacement(level, spawner);
+        if (!dungeon.ok() || !hasVerticalRoom(level, dungeon.origin())) {
+            return Result.NO_DUNGEON;
+        }
+        BlockPos dungeonOrigin = dungeon.origin();
+        Direction front = dungeon.front();
+
+        int uses = Math.max(2, Config.ROUND_TRIPS.get() * 2);
+        closePrevious(level, player);
+        placeStructure(level, near.origin(), near.front(), dungeonOrigin, front, uses, true);
+        // 地牢那一端用紧凑结构：只有门框 + 门面，没有高台和台阶
+        placeStructure(level, dungeonOrigin, front, near.origin(), near.front(), uses, false);
+        remember(level, player, near.origin(), near.front(), dungeonOrigin, front);
+
+        player.displayClientMessage(Component.translatable("message.enderportal.dungeon_created",
+                uses / 2).withStyle(ChatFormatting.LIGHT_PURPLE), false);
+
+        return Result.OK;
+    }
+
+    /** 记录"这个玩家最近开的门"，用于新门顶掉旧门。 */
+    private static void remember(ServerLevel level, ServerPlayer player, BlockPos origin, Direction front,
+                                 BlockPos partner, Direction partnerFront) {
+        PortalRegistry.get(level.getServer()).remember(player.getUUID(),
+                new PortalRegistry.Entry(level.dimension(), origin, front, partner, partnerFront));
+    }
+
+    /**
+     * 算近端门该开在哪：先看准星指着哪，再在那一列 / 附近找一块放得下整座门的平地。
+     */
+    private static NearEnd resolveNearEnd(ServerLevel level, ServerPlayer player) {
         Direction front = player.getDirection().getOpposite();
 
         BlockPos aim = aimTarget(level, player);
@@ -174,32 +260,86 @@ public final class PortalManager {
 
         BlockPos origin = resolveOrigin(level, anchor, referenceY, front);
         if (origin == null) {
-            return Result.NO_GROUND;
+            return new NearEnd(null, front, Result.NO_GROUND);
         }
         if (!playerClear(player, origin, front)) {
-            return Result.TOO_CLOSE;
+            return new NearEnd(null, front, Result.TOO_CLOSE);
         }
+        return new NearEnd(origin, front, null);
+    }
 
-        BlockPos target = findTarget(level, player.blockPosition(), front);
-        if (target == null) {
-            return Result.NO_TARGET;
+    /**
+     * 地牢里那座门的原点：把门框<b>嵌进地牢的墙</b>，门面朝向刷怪笼。
+     *
+     * <p>地牢房间只有 5~7 格宽、3 格高，塞不下「高台 + 台阶」，
+     * 所以这里用紧凑结构。高度正好卡住：底梁落在刷怪笼那一层（地板），
+     * 3 格门面占据房间的空气层，顶梁落在天花板那一层。</p>
+     *
+     * @return 结构原点 + 朝向；四面都没有墙（不是正常的封闭房间）返回 {@code null}
+     */
+    private static NearEnd dungeonPlacement(ServerLevel level, BlockPos spawner) {
+        for (Direction intoWall : Direction.Plane.HORIZONTAL) {
+            BlockPos wall = findWall(level, spawner, intoWall);
+            if (wall == null) {
+                continue;
+            }
+            // 门面朝回房间内部（也就是朝刷怪笼）
+            Direction front = intoWall.getOpposite();
+            Direction lateral = front.getCounterClockWise();
+            // 框架宽 4，往侧面挪 2 格让门洞大致对着刷怪笼
+            BlockPos origin = wall.relative(lateral, -2).atY(spawner.getY() - 1);
+            // 门正前方得是空的，否则玩家从门口走不出来 —— 换个方向再试
+            if (!roomInFront(level, origin, front)) {
+                continue;
+            }
+            return new NearEnd(origin, front, null);
         }
+        return new NearEnd(null, Direction.NORTH, Result.NO_DUNGEON);
+    }
 
-        // 先把上一对门清掉
-        closePrevious(level, player);
+    /**
+     * 门正前方（局部 z=1）那 4×3 格能不能走人。
+     *
+     * <p>判定和清理逻辑保持一致：只要不是"有碰撞 + 带方块实体"（箱子、刷怪笼这种
+     * 不能拆的东西），都算能清出来。这样既不会把门开在实心墙里，
+     * 也不会因为地牢角落里有个箱子就整座门开不成。</p>
+     */
+    private static boolean roomInFront(ServerLevel level, BlockPos origin, Direction front) {
+        for (int lx = 0; lx < FRAME_WIDTH; lx++) {
+            for (int ly = 1; ly <= PORTAL_HEIGHT; ly++) {
+                BlockPos pos = localPos(origin, front, lx, ly, 1);
+                BlockState state = level.getBlockState(pos);
+                boolean solid = !state.getCollisionShape(level, pos).isEmpty();
+                if (solid && level.getBlockEntity(pos) != null) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
 
-        int uses = Math.max(2, Config.ROUND_TRIPS.get() * 2);
-        placeStructure(level, origin, front, target, front, uses);
-        placeStructure(level, target, front, origin, front, uses);
+    /**
+     * 从刷怪笼朝 {@code dir} 走，找最近的实心方块（那就是地牢的墙）。
+     *
+     * <p>判定用"朝向房间那一面结实"，所以圆石、苔石、石砖、深板岩都算墙，
+     * 而空气、水、火把这类挡不住人的方块不算。</p>
+     *
+     * @return 墙的坐标；2~5 格内没有墙返回 {@code null}
+     */
+    private static BlockPos findWall(ServerLevel level, BlockPos spawner, Direction dir) {
+        for (int step = DUNGEON_WALL_MIN; step <= DUNGEON_WALL_MAX; step++) {
+            BlockPos pos = spawner.relative(dir, step);
+            if (level.getBlockState(pos).isFaceSturdy(level, pos, dir.getOpposite())) {
+                return pos;
+            }
+        }
+        return null;
+    }
 
-        PortalRegistry.get(level.getServer()).remember(player.getUUID(),
-                new PortalRegistry.Entry(level.dimension(), origin, front, target, front));
-
-        Component biomeName = biomeName(level, target);
-        player.displayClientMessage(Component.translatable("message.enderportal.created",
-                biomeName, uses / 2).withStyle(ChatFormatting.LIGHT_PURPLE), false);
-
-        return Result.OK;
+    /** 紧凑结构只占高度，检查一下有没有超出世界上下界。 */
+    private static boolean hasVerticalRoom(ServerLevel level, BlockPos origin) {
+        return origin.getY() > level.getMinBuildHeight()
+                && origin.getY() + FRAME_HEIGHT < level.getMaxBuildHeight();
     }
 
     /** 让该玩家上一对门失效（如果还在的话）。 */
@@ -564,34 +704,52 @@ public final class PortalManager {
 
     /**
      * 生成整座门：先挖空门洞与台阶上方，再摆框架、高台、台阶和门面。
+     *
+     * @param platform {@code true} 为完整的「台阶 + 高台 + 门」；
+     *                 {@code false} 为紧凑版（只有门框 + 门面），给地牢这种室内空间用
      */
     private static void placeStructure(ServerLevel level, BlockPos origin, Direction front,
-                                       BlockPos partnerOrigin, Direction partnerFront, int uses) {
+                                       BlockPos partnerOrigin, Direction partnerFront, int uses,
+                                       boolean platform) {
         ensureChunks(level, origin, front);
 
-        // 1) 挖空：门洞 + 高台上方
         BlockState air = Blocks.AIR.defaultBlockState();
-        for (int lx = 0; lx < FRAME_WIDTH; lx++) {
-            for (int lz = 0; lz < PLATFORM_DEPTH; lz++) {
-                for (int ly = 1; ly <= FRAME_HEIGHT; ly++) {
-                    level.setBlockAndUpdate(localPos(origin, front, lx, ly, lz), air);
+        if (platform) {
+            // 1) 挖空：门洞 + 高台上方
+            for (int lx = 0; lx < FRAME_WIDTH; lx++) {
+                for (int lz = 0; lz < PLATFORM_DEPTH; lz++) {
+                    for (int ly = 1; ly <= FRAME_HEIGHT; ly++) {
+                        level.setBlockAndUpdate(localPos(origin, front, lx, ly, lz), air);
+                    }
                 }
             }
-        }
-        // 台阶上方留出站立空间
-        for (int step = 0; step < STEP_COUNT; step++) {
-            int lz = PLATFORM_DEPTH + step;
-            int stepY = -1 - step;
+            // 台阶上方留出站立空间
+            for (int step = 0; step < STEP_COUNT; step++) {
+                int lz = PLATFORM_DEPTH + step;
+                int stepY = -1 - step;
+                for (int lx = 1; lx <= PORTAL_WIDTH; lx++) {
+                    for (int ly = stepY + 1; ly <= stepY + 4; ly++) {
+                        level.setBlockAndUpdate(localPos(origin, front, lx, ly, lz), air);
+                    }
+                }
+            }
+        } else {
+            // 紧凑版：地牢房间本来就是空的，只把门正前方那一列清出来，
+            // 而且绝不碰刷怪笼和箱子（那是地牢的战利品，不能拆）
             for (int lx = 1; lx <= PORTAL_WIDTH; lx++) {
-                for (int ly = stepY + 1; ly <= stepY + 4; ly++) {
-                    level.setBlockAndUpdate(localPos(origin, front, lx, ly, lz), air);
+                for (int ly = 1; ly <= PORTAL_HEIGHT; ly++) {
+                    BlockPos inFront = localPos(origin, front, lx, ly, 1);
+                    BlockState state = level.getBlockState(inFront);
+                    if (!state.isAir() && level.getBlockEntity(inFront) == null) {
+                        level.setBlockAndUpdate(inFront, air);
+                    }
                 }
             }
         }
 
         // 2) 摆放
         BlockState portalState = EnderPortal.REMOTE_PORTAL.get().defaultBlockState();
-        for (Piece piece : pieces(origin, front, portalState)) {
+        for (Piece piece : pieces(origin, front, portalState, platform)) {
             level.setBlockAndUpdate(piece.pos(), piece.state());
             if (piece.state().is(EnderPortal.REMOTE_PORTAL.get())
                     && level.getBlockEntity(piece.pos()) instanceof RemotePortalBlockEntity portal) {
@@ -606,8 +764,12 @@ public final class PortalManager {
     /**
      * 整座门要放的所有方块（含支撑填充）。
      * 坐标只由 origin / front 决定，所以搭建和拆除共用这一份清单，保证拆得干净。
+     *
+     * @param platform {@code false} 时只返回门框 + 门面（紧凑版是完整版的<b>子集</b>），
+     *                 这样拆除时永远按完整版清单走也不会漏
      */
-    private static List<Piece> pieces(BlockPos origin, Direction front, BlockState portalState) {
+    private static List<Piece> pieces(BlockPos origin, Direction front, BlockState portalState,
+                                      boolean platform) {
         List<Piece> out = new ArrayList<>(96);
         BlockState obsidian = Blocks.OBSIDIAN.defaultBlockState();
         // 楼梯的高侧朝向门（局部 -Z），玩家从外侧逐级走上来
@@ -631,6 +793,10 @@ public final class PortalManager {
             for (int ly = 1; ly <= PORTAL_HEIGHT; ly++) {
                 out.add(new Piece(localPos(origin, front, lx, ly, 0), portalState));
             }
+        }
+
+        if (!platform) {
+            return out;
         }
 
         // 高台：表面一层 + 往下垫到地面
@@ -710,13 +876,18 @@ public final class PortalManager {
     /**
      * 把整座门（门面 + 框架 + 高台 + 台阶）全部清成空气。
      *
+     * <p>一律按<b>完整结构</b>的清单拆，即使这一端是紧凑版（地牢那端）也没关系：
+     * 紧凑版的方块本来就是完整版的子集，多出来的高台 / 台阶位置在地牢里是圆石，
+     * 会被 {@link #isOwnBlock} 过滤掉，不会误伤。</p>
+     *
      * @param skip 正在被移除的方块（重入时跳过，避免在同一位置二次 setBlock）
      */
     public static void destroyStructure(ServerLevel level, BlockPos origin, Direction front, BlockPos skip) {
         ensureChunks(level, origin, front);
 
         BlockState air = Blocks.AIR.defaultBlockState();
-        for (Piece piece : pieces(origin, front, EnderPortal.REMOTE_PORTAL.get().defaultBlockState())) {
+        for (Piece piece : pieces(origin, front,
+                EnderPortal.REMOTE_PORTAL.get().defaultBlockState(), true)) {
             BlockPos pos = piece.pos();
             if (skip != null && pos.equals(skip)) {
                 continue;

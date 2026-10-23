@@ -14,6 +14,7 @@ public final class Config {
     public static final ModConfigSpec.IntValue MIN_DISTANCE;
     public static final ModConfigSpec.IntValue MAX_DISTANCE;
     public static final ModConfigSpec.IntValue AIM_DISTANCE;
+    public static final ModConfigSpec.IntValue DUNGEON_SEARCH_CHUNKS;
     public static final ModConfigSpec SPEC;
 
     static {
@@ -44,6 +45,10 @@ public final class Config {
         AIM_DISTANCE = builder
                 .comment("门开在视线瞄准的位置，这是瞄准的最大距离（格）。")
                 .defineInRange("aimDistance", 24, 4, 64);
+
+        DUNGEON_SEARCH_CHUNKS = builder
+                .comment("地牢传送石在玩家周围多少个区块内找地牢（1 区块 = 16 格）。")
+                .defineInRange("dungeonSearchChunks", 8, 1, 16);
 
         builder.pop();
         SPEC = builder.build();
