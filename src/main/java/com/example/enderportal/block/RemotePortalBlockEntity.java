@@ -3,6 +3,7 @@ package com.example.enderportal.block;
 import com.example.enderportal.EnderPortal;
 import com.example.enderportal.portal.PortalCooldowns;
 import com.example.enderportal.portal.PortalManager;
+import com.mojang.logging.LogUtils;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -18,6 +19,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
+import org.slf4j.Logger;
 
 /**
  * 传送门方块实体。
@@ -34,6 +36,9 @@ public class RemotePortalBlockEntity extends BlockEntity {
 
     /** 结构自检间隔（tick）。 */
     private static final int CHECK_INTERVAL = 20;
+    /** 连续几次自检都不完整才判定失效（防止建门/区块加载瞬间的抖动误拆）。 */
+    private static final int BROKEN_CHECKS_BEFORE_INVALIDATE = 2;
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     private boolean configured;
     private BlockPos frameOrigin = BlockPos.ZERO;
@@ -44,6 +49,8 @@ public class RemotePortalBlockEntity extends BlockEntity {
 
     /** 仅用于错开自检，不需要存档。 */
     private int tickCounter;
+    /** 连续几次自检发现结构不完整；结构恢复完整就清零。 */
+    private int brokenChecks;
 
     public RemotePortalBlockEntity(BlockPos pos, BlockState state) {
         super(EnderPortal.REMOTE_PORTAL_BE.get(), pos, state);
@@ -100,11 +107,18 @@ public class RemotePortalBlockEntity extends BlockEntity {
         }
         tickCounter = 0;
 
-        if (PortalManager.isTearingDown()) {
+        if (PortalManager.isTearingDown() || PortalManager.isBuilding()) {
+            brokenChecks = 0;
             return;
         }
-        // 玩家把黑曜石框架拆了也算失效
-        if (!PortalManager.isStructureIntact(level, frameOrigin, frameFront)) {
+        // 玩家把黑曜石框架拆了也算失效；但要连续两次都不完整才拆，
+        // 免得建门或区块刚加载时的瞬时状态把好好的门拆掉
+        if (PortalManager.isStructureIntact(level, frameOrigin, frameFront)) {
+            brokenChecks = 0;
+            return;
+        }
+        if (++brokenChecks >= BROKEN_CHECKS_BEFORE_INVALIDATE) {
+            LOGGER.info("[enderportal] frame no longer intact at {}, tearing down the pair", frameOrigin);
             invalidatePair(level);
         }
     }

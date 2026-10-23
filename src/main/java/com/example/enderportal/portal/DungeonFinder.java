@@ -9,6 +9,10 @@ import net.minecraft.world.level.block.entity.SpawnerBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+
 /**
  * 在玩家附近找「地牢」（dungeon / monster room）。
  *
@@ -18,11 +22,11 @@ import net.minecraft.world.level.chunk.LevelChunk;
  * 只能翻区块找它留下的痕迹。</p>
  *
  * <p>这里用的判定是「刷怪笼 + 圆石地板」：地牢中央一定有一个刷怪笼，
- * 而它脚下的 5×5 地板被铺成圆石 / 苔石。要塞是石砖 + 蠹虫刷怪笼、
+ * 而它脚下的地板被铺成圆石 / 苔石。要塞是石砖 + 蠹虫刷怪笼、
  * 废弃矿井是木板 + 铁轨、下界要塞是下界砖，都不会命中这条规则。</p>
  *
  * <p>只扫描<b>已经加载</b>的区块（{@code getChunkNow}），不会为了找地牢去
- * 同步生成新地形，所以这个操作不会卡服。视野距离内的区块足够找到地牢。</p>
+ * 同步生成新地形，所以这个操作不会卡服。</p>
  */
 public final class DungeonFinder {
 
@@ -33,23 +37,26 @@ public final class DungeonFinder {
     }
 
     /**
-     * 找离 {@code center} 最近的地牢刷怪笼。
+     * 找离 {@code center} 最近的若干个地牢刷怪笼，按距离由近到远排序。
      *
      * <p>按区块一圈圈往外扫，扫到第一圈有结果的就不再往外找，
-     * 所以返回的一定是"最近的那一圈"里最近的。</p>
+     * 所以返回的都是"最近那一圈"里的。多返回几个是为了容错：
+     * 最近那个地牢可能四面都没有合适的墙、或者玩家自己就站在里面，
+     * 这时可以换下一个。</p>
      *
      * @param radiusChunks 最多往外找多少个区块
-     * @return 刷怪笼的坐标；没找到返回 {@code null}
+     * @param limit        最多返回几个候选
+     * @return 刷怪笼坐标列表；一个都没找到时返回空列表
      */
-    public static BlockPos findNearestSpawner(ServerLevel level, BlockPos center, int radiusChunks) {
+    public static List<BlockPos> findDungeons(ServerLevel level, BlockPos center,
+                                              int radiusChunks, int limit) {
         ServerChunkCache cache = level.getChunkSource();
         int centerChunkX = center.getX() >> 4;
         int centerChunkZ = center.getZ() >> 4;
 
-        BlockPos best = null;
-        double bestDistance = Double.MAX_VALUE;
+        List<BlockPos> found = new ArrayList<>(limit);
 
-        for (int ring = 0; ring <= radiusChunks; ring++) {
+        for (int ring = 0; ring <= radiusChunks && found.size() < limit; ring++) {
             boolean foundInRing = false;
             for (int chunkX = centerChunkX - ring; chunkX <= centerChunkX + ring; chunkX++) {
                 for (int chunkZ = centerChunkZ - ring; chunkZ <= centerChunkZ + ring; chunkZ++) {
@@ -69,10 +76,8 @@ public final class DungeonFinder {
                         if (!isDungeonRoom(level, pos)) {
                             continue;
                         }
-                        double distance = pos.distSqr(center);
-                        if (distance < bestDistance) {
-                            bestDistance = distance;
-                            best = pos;
+                        if (!found.contains(pos)) {
+                            found.add(pos);
                             foundInRing = true;
                         }
                     }
@@ -82,10 +87,15 @@ public final class DungeonFinder {
                 break;
             }
         }
-        return best;
+
+        found.sort(Comparator.comparingDouble(pos -> pos.distSqr(center)));
+        if (found.size() > limit) {
+            return new ArrayList<>(found.subList(0, limit));
+        }
+        return found;
     }
 
-    /** 刷怪笼脚下的 5×5 地板是不是圆石 / 苔石。 */
+    /** 刷怪笼脚下的地板是不是圆石 / 苔石。 */
     private static boolean isDungeonRoom(ServerLevel level, BlockPos spawner) {
         int tiles = 0;
         for (int dx = -2; dx <= 2; dx++) {

@@ -48,8 +48,8 @@ public final class Config {
 
         DUNGEON_SEARCH_CHUNKS = builder
                 .comment("地牢传送石在玩家周围多少个区块内找地牢（1 区块 = 16 格）。",
-                        "注意只有已经加载的区块才能被扫到，所以实际范围还受视野/模拟距离限制。")
-                .defineInRange("dungeonSearchChunks", 16, 1, 32);
+                        "只有已经加载的区块才能被扫到，所以实际范围还受视野/模拟距离限制。")
+                .defineInRange("dungeonRadiusChunks", 20, 1, 48);
 
         builder.pop();
         SPEC = builder.build();

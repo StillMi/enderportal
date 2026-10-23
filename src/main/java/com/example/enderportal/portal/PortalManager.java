@@ -90,26 +90,48 @@ public final class PortalManager {
     private static final int APPROACH_DISTANCE = STEP_COUNT + 3;
 
     /** 瞄准点附近最多挪几格去找一块能站人的平地（切比雪夫距离）。 */
-    private static final int MAX_ANCHOR_SHIFT = 3;
+    private static final int MAX_ANCHOR_SHIFT = 4;
     /** 在瞄准的那一列上，向下最多找多少格地面。 */
-    private static final int GROUND_SEARCH_DOWN = 32;
+    private static final int GROUND_SEARCH_DOWN = 48;
     /** 在瞄准的那一列上，向上最多找多少格地面（瞄准洞穴顶部之类的情况）。 */
-    private static final int GROUND_SEARCH_UP = 8;
+    private static final int GROUND_SEARCH_UP = 12;
     /** 结构占地范围内，每列只在参考高度上下这么多格内找地面，避免把门架在悬崖底下。 */
-    private static final int FOOTPRINT_WINDOW = 4;
-    /** 结构占地范围内地面最大落差，超过就说明地形太陡，换个位置。 */
-    private static final int MAX_FOOTPRINT_SPREAD = 3;
+    private static final int FOOTPRINT_WINDOW = 6;
+    /**
+     * 结构占地范围内地面最大落差，超过就说明地形太陡，换个位置。
+     *
+     * <p>这个值不能太小：真实地形（山坡、树根、台阶边）本来就起伏，
+     * 卡太死会让"站不住脚"刷屏。高台本来就会从最低处垫黑曜石柱，
+     * 所以只要落差在可控范围内就让它建。</p>
+     */
+    private static final int MAX_FOOTPRINT_SPREAD = 6;
     /** 同一列上最多试几层地面（瞄准树冠时往下多试几层就能落回林地）。 */
-    private static final int MAX_GROUND_CANDIDATES = 4;
+    private static final int MAX_GROUND_CANDIDATES = 6;
+    /** 占地范围内允许有几列找不到天然地面（树、水、坑），用锚点高度补齐。 */
+    private static final int MAX_MISSING_COLUMNS = 4;
     /** 地牢那一端：门框嵌进离刷怪笼多远的墙（地牢房间半径 2~3 格）。 */
     private static final int DUNGEON_WALL_MIN = 2;
     private static final int DUNGEON_WALL_MAX = 5;
+    /** 一次最多试几个地牢候选（最近那个可能四面没墙，或者玩家自己站在里面）。 */
+    private static final int MAX_DUNGEON_CANDIDATES = 6;
 
     /**
      * 拆门重入保护：拆除过程中 setBlock 会再次触发 onRemove，
      * 没有它就会无限递归。方块更新只在服务端主线程发生，普通静态量足够。
      */
     private static boolean tearingDown = false;
+
+    /**
+     * 建门保护。
+     *
+     * <p>{@code LevelChunk#setBlockState} 会对被覆盖的<b>旧方块</b>调用
+     * {@code onRemove}，而我们的门方块在 {@code onRemove} 里会"整对门失效"。
+     * 于是只要建门过程中有任何一个格子被后来的放置覆盖（典型情况：
+     * 玩家自己就站在地牢里，近端结构和地牢端结构重叠），
+     * 整对门就会在<b>建成的同一 tick 里被自己拆掉</b>，表现就是"生成后立刻消失"。
+     * 建门期间把这个标志置上，{@code onRemove} 就不会再触发失效。</p>
+     */
+    private static boolean building = false;
 
     private PortalManager() {
     }
@@ -204,9 +226,15 @@ public final class PortalManager {
      * 在玩家<b>瞄准的位置</b>开一座门，另一端开在<b>附近的地牢</b>里。
      *
      * <p>地牢那一端不用「高台 + 台阶」，而是把门框直接嵌进地牢的墙里：
-     * 地牢房间只有 5~7 格宽、3 格高，塞不下整座高台结构，
+     * 地牢房间只有 5~7 格宽、4 格高，塞不下整座高台结构，
      * 而且玩家要的就是"落在地牢房间里"。门框底部与地牢地面齐平，
      * 玩家从门口走出来就是地牢的地板。</p>
+     *
+     * <p><b>建门顺序很重要</b>：先建地牢那一端，再建近端。两端结构如果有重叠，
+     * 后建的会把先建的方块覆盖掉，而 {@code onRemove} 会把"方块被覆盖"当成
+     * "玩家拆门"从而整对失效 —— 这就是"生成后立刻消失"的成因。
+     * 这里用两重保险：先用包围盒排除会重叠的落点，建门期间再用
+     * {@link #isBuilding()} 屏蔽掉 {@code onRemove} 的失效逻辑。</p>
      */
     public static Result openDungeonPortalPair(ServerLevel level, ServerPlayer player) {
         NearEnd near = resolveNearEnd(level, player);
@@ -215,23 +243,43 @@ public final class PortalManager {
         }
 
         int radius = Math.max(1, Config.DUNGEON_SEARCH_CHUNKS.get());
-        BlockPos spawner = DungeonFinder.findNearestSpawner(level, player.blockPosition(), radius);
-        if (spawner == null) {
+        List<BlockPos> spawners = DungeonFinder.findDungeons(
+                level, player.blockPosition(), radius, MAX_DUNGEON_CANDIDATES);
+        if (spawners.isEmpty()) {
             return Result.NO_DUNGEON;
         }
 
-        NearEnd dungeon = dungeonPlacement(level, spawner);
-        if (!dungeon.ok() || !hasVerticalRoom(level, dungeon.origin())) {
+        // 近端结构占的地方：地牢那一端不能和它撞上，否则互相覆盖会把门拆掉
+        Box nearBox = structureBox(near.origin(), near.front(), true);
+
+        NearEnd dungeon = null;
+        for (BlockPos spawner : spawners) {
+            dungeon = dungeonPlacement(level, spawner, nearBox);
+            if (dungeon.ok()) {
+                break;
+            }
+        }
+        if (dungeon == null || !dungeon.ok() || !hasVerticalRoom(level, dungeon.origin())) {
             return Result.NO_DUNGEON;
         }
+
         BlockPos dungeonOrigin = dungeon.origin();
         Direction front = dungeon.front();
 
         int uses = Math.max(2, Config.ROUND_TRIPS.get() * 2);
         closePrevious(level, player);
-        placeStructure(level, near.origin(), near.front(), dungeonOrigin, front, uses, true);
+
         // 地牢那一端用紧凑结构：只有门框 + 门面，没有高台和台阶
         placeStructure(level, dungeonOrigin, front, near.origin(), near.front(), uses, false);
+        placeStructure(level, near.origin(), near.front(), dungeonOrigin, front, uses, true);
+
+        // 兜底：万一还是被覆盖了，别把半座门留给玩家
+        if (!isStructureIntact(level, near.origin(), near.front())
+                || !isStructureIntact(level, dungeonOrigin, front)) {
+            invalidate(level, near.origin(), near.front(), dungeonOrigin, front);
+            return Result.NO_DUNGEON;
+        }
+
         remember(level, player, near.origin(), near.front(), dungeonOrigin, front);
 
         player.displayClientMessage(Component.translatable("message.enderportal.dungeon_created",
@@ -249,35 +297,45 @@ public final class PortalManager {
 
     /**
      * 算近端门该开在哪：先看准星指着哪，再在那一列 / 附近找一块放得下整座门的平地。
+     *
+     * <p>瞄准点实在放不下（悬崖正上方、水面、树冠）时，<b>再退回"玩家正前方"试一次</b>，
+     * 而不是直接报"站不住脚"。玩家想要的是门开出来，不是一句错误提示。</p>
      */
     private static NearEnd resolveNearEnd(ServerLevel level, ServerPlayer player) {
         Direction front = player.getDirection().getOpposite();
+        Result failure = Result.NO_GROUND;
 
         BlockPos aim = aimTarget(level, player);
-        // 视线没打到方块（对着天空）：退回到"玩家正前方"的老位置
-        BlockPos anchor = aim != null ? aim : fallbackAnchor(player, front);
-        int referenceY = (aim != null ? aim.getY() : player.blockPosition().getY()) + 1;
+        if (aim != null) {
+            BlockPos origin = resolveOrigin(level, aim, aim.getY() + 1, front);
+            if (origin != null) {
+                if (playerClear(player, origin, front)) {
+                    return new NearEnd(origin, front, null);
+                }
+                // 瞄准点能放下，但会压到玩家自己
+                failure = Result.TOO_CLOSE;
+            }
+        }
 
-        BlockPos origin = resolveOrigin(level, anchor, referenceY, front);
-        if (origin == null) {
-            return new NearEnd(null, front, Result.NO_GROUND);
+        // 视线没打到方块，或者瞄准点那一带放不下：退回"玩家正前方"再试一次
+        BlockPos fallback = fallbackAnchor(player, front);
+        BlockPos origin = resolveOrigin(level, fallback, player.blockPosition().getY() + 1, front);
+        if (origin != null && playerClear(player, origin, front)) {
+            return new NearEnd(origin, front, null);
         }
-        if (!playerClear(player, origin, front)) {
-            return new NearEnd(null, front, Result.TOO_CLOSE);
-        }
-        return new NearEnd(origin, front, null);
+        return new NearEnd(null, front, failure);
     }
 
     /**
      * 地牢里那座门的原点：把门框<b>嵌进地牢的墙</b>，门面朝向刷怪笼。
      *
-     * <p>地牢房间只有 5~7 格宽、3 格高，塞不下「高台 + 台阶」，
+     * <p>地牢房间只有 5~7 格宽、4 格高，塞不下「高台 + 台阶」，
      * 所以这里用紧凑结构。高度正好卡住：底梁落在刷怪笼那一层（地板），
-     * 3 格门面占据房间的空气层，顶梁落在天花板那一层。</p>
+     * 3 格门面占据房间的空气层，顶梁落在天花板下面那一层。</p>
      *
-     * @return 结构原点 + 朝向；四面都没有墙（不是正常的封闭房间）返回 {@code null}
+     * @return 结构原点 + 朝向；四面都没有可用的墙（不是正常的封闭房间）返回带错误的 {@link NearEnd}
      */
-    private static NearEnd dungeonPlacement(ServerLevel level, BlockPos spawner) {
+    private static NearEnd dungeonPlacement(ServerLevel level, BlockPos spawner, Box avoid) {
         for (Direction intoWall : Direction.Plane.HORIZONTAL) {
             BlockPos wall = findWall(level, spawner, intoWall);
             if (wall == null) {
@@ -292,9 +350,39 @@ public final class PortalManager {
             if (!roomInFront(level, origin, front)) {
                 continue;
             }
+            // 和近端结构重叠就会互相覆盖，换一面墙
+            if (structureBox(origin, front, false).intersects(avoid)) {
+                continue;
+            }
             return new NearEnd(origin, front, null);
         }
         return new NearEnd(null, Direction.NORTH, Result.NO_DUNGEON);
+    }
+
+    /** 结构占用的空间范围（轴对齐包围盒）。 */
+    private record Box(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
+        boolean intersects(Box other) {
+            return minX <= other.maxX && other.minX <= maxX
+                    && minY <= other.maxY && other.minY <= maxY
+                    && minZ <= other.maxZ && other.minZ <= maxZ;
+        }
+    }
+
+    /**
+     * 结构真正会动到的方块范围。
+     *
+     * <p>完整版包含台阶和高台，紧凑版只有门框那一层；两边都往四周留一格，
+     * 免得两座门贴脸生成、互相把对方的框架挤掉。</p>
+     */
+    private static Box structureBox(BlockPos origin, Direction front, boolean platform) {
+        int maxLz = platform ? PLATFORM_DEPTH + STEP_COUNT : 1;
+        int minLy = platform ? -PLATFORM_RISE : 0;
+        int maxLy = FRAME_HEIGHT;
+        BlockPos a = localPos(origin, front, -1, minLy, -1);
+        BlockPos b = localPos(origin, front, FRAME_WIDTH, maxLy, maxLz);
+        return new Box(
+                Math.min(a.getX(), b.getX()), Math.min(a.getY(), b.getY()), Math.min(a.getZ(), b.getZ()),
+                Math.max(a.getX(), b.getX()), Math.max(a.getY(), b.getY()), Math.max(a.getZ(), b.getZ()));
     }
 
     /**
@@ -368,9 +456,12 @@ public final class PortalManager {
     public static void clearLandingSpace(ServerLevel level, BlockPos feet) {
         for (int i = 0; i < 2; i++) {
             BlockPos pos = feet.above(i);
-            if (!level.getBlockState(pos).isAir()) {
-                level.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
+            BlockState state = level.getBlockState(pos);
+            // 带方块实体的东西一律不动：地牢里的刷怪笼、战利品箱不能被落点清掉
+            if (state.isAir() || level.getBlockEntity(pos) != null) {
+                continue;
             }
+            level.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
         }
     }
 
@@ -396,7 +487,7 @@ public final class PortalManager {
      */
     public static void invalidate(ServerLevel level, BlockPos origin, Direction front,
                                   BlockPos partner, Direction partnerFront) {
-        if (tearingDown) {
+        if (tearingDown || building) {
             return;
         }
         tearingDown = true;
@@ -410,6 +501,11 @@ public final class PortalManager {
 
     public static boolean isTearingDown() {
         return tearingDown;
+    }
+
+    /** 正在建门（此时任何"方块被覆盖"都不算玩家拆门）。 */
+    public static boolean isBuilding() {
+        return building;
     }
 
     /* ------------------------------------------------------------------ */
@@ -481,14 +577,21 @@ public final class PortalManager {
         return null;
     }
 
-    /** 结构会不会把玩家自己圈进去（瞄准脚下时）。 */
+    /**
+     * 结构会不会把玩家自己封进去（瞄准脚下时）。
+     *
+     * <p>只挡真正会压到玩家的格子：玩家脚 / 头所在的那两格如果正好要放<b>实体方块</b>，
+     * 才算"太近"。以前是拿整个占地范围（含台阶外沿和四周留白）去比 X/Z，
+     * 玩家站在 5 格外都会被判太近，正常瞄准几乎必然触发。</p>
+     */
     private static boolean playerClear(ServerPlayer player, BlockPos origin, Direction front) {
-        for (int lx = -1; lx <= FRAME_WIDTH; lx++) {
-            for (int lz = -1; lz <= STEP_COUNT + 2; lz++) {
-                BlockPos pos = localPos(origin, front, lx, 0, lz);
-                if (pos.getX() == player.getBlockX() && pos.getZ() == player.getBlockZ()) {
-                    return false;
-                }
+        BlockPos feet = player.blockPosition();
+        BlockPos head = feet.above();
+        for (Piece piece : pieces(origin, front,
+                EnderPortal.REMOTE_PORTAL.get().defaultBlockState(), true)) {
+            BlockPos pos = piece.pos();
+            if (pos.equals(feet) || pos.equals(head)) {
+                return false;
             }
         }
         return true;
@@ -568,23 +671,32 @@ public final class PortalManager {
     /* ------------------------------------------------------------------ */
 
     /**
-     * 结构占地范围内所有列的地面高度（局部 lx=-1..4, lz=-1..5）。
+     * 结构占地范围内所有列的地面高度。
      *
-     * <p>每一列都在 {@code referenceY} 上下 {@link #FOOTPRINT_WINDOW} 格内找"脚下结实、
-     * 本身是空的"那一格，所以树叶、水面、悬空方块都不会被当成地面。
-     * 只要有一列找不到地面（悬崖边、水面），就返回 {@code null}。</p>
+     * <p>只检查<b>真正会放方块</b>的那些列（高台 + 台阶，4×5），四周留白不再要求
+     * 必须有地面 —— 以前连留白一起要求，一棵树、一滩水就能让整次开门失败。</p>
+     *
+     * <p>个别列找不到天然地面（树干、水面、坑）时，用锚点列的高度补齐，
+     * 但只要缺得太多（超过 {@link #MAX_MISSING_COLUMNS}）就认为地形不适合，返回
+     * {@code null}。高台本身会从最低处垫黑曜石柱，所以补齐是安全的。</p>
      */
     private static int[][] footprintSurfaces(ServerLevel level, BlockPos origin, Direction front, int referenceY) {
-        int[][] surfaces = new int[FRAME_WIDTH + 2][STEP_COUNT + 4];
-        for (int ix = 0; ix < surfaces.length; ix++) {
-            for (int iz = 0; iz < surfaces[ix].length; iz++) {
-                BlockPos pos = localPos(origin, front, ix - 1, 0, iz - 1);
+        int columns = PLATFORM_DEPTH + STEP_COUNT; // 高台 + 台阶
+        int[][] surfaces = new int[FRAME_WIDTH][columns];
+        int missing = 0;
+        for (int ix = 0; ix < FRAME_WIDTH; ix++) {
+            for (int iz = 0; iz < columns; iz++) {
+                BlockPos pos = localPos(origin, front, ix, 0, iz);
                 Integer ground = groundNear(level, pos.getX(), pos.getZ(), referenceY,
                         FOOTPRINT_WINDOW, FOOTPRINT_WINDOW);
                 if (ground == null) {
-                    return null;
+                    if (++missing > MAX_MISSING_COLUMNS) {
+                        return null;
+                    }
+                    surfaces[ix][iz] = referenceY;
+                } else {
+                    surfaces[ix][iz] = ground;
                 }
-                surfaces[ix][iz] = ground;
             }
         }
         return surfaces;
@@ -711,6 +823,19 @@ public final class PortalManager {
     private static void placeStructure(ServerLevel level, BlockPos origin, Direction front,
                                        BlockPos partnerOrigin, Direction partnerFront, int uses,
                                        boolean platform) {
+        // 建门期间不许因为"方块被覆盖"而自我失效，见 building 的注释
+        boolean previousBuilding = building;
+        building = true;
+        try {
+            doPlaceStructure(level, origin, front, partnerOrigin, partnerFront, uses, platform);
+        } finally {
+            building = previousBuilding;
+        }
+    }
+
+    private static void doPlaceStructure(ServerLevel level, BlockPos origin, Direction front,
+                                         BlockPos partnerOrigin, Direction partnerFront, int uses,
+                                         boolean platform) {
         ensureChunks(level, origin, front);
 
         BlockState air = Blocks.AIR.defaultBlockState();
