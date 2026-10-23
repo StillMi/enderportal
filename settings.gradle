@@ -1,0 +1,19 @@
+// ASCII only, see note in build.gradle.
+
+pluginManagement {
+    repositories {
+        mavenLocal()
+        gradlePluginPortal()
+        // Optional China mirror; Gradle skips it if unreachable.
+        maven { name = 'AliyunGradlePlugin'; url = 'https://maven.aliyun.com/repository/gradle-plugin' }
+        mavenCentral()
+        // NeoGradle is only published here.
+        maven { name = 'NeoForged'; url = 'https://maven.neoforged.net/releases' }
+    }
+}
+
+plugins {
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.8.0'
+}
+
+rootProject.name = 'enderportal'

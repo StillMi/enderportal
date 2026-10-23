@@ -1,0 +1,19 @@
+{
+  "item.enderportal.portal_stone": "末影传送石",
+  "block.enderportal.remote_portal": "远程传送门",
+  "tooltip.enderportal.portal_stone": "长按右键引导，开启一座通往远处其它群系的双向传送门",
+  "tooltip.enderportal.portal_stone.uses": "剩余开门次数：%s / %s",
+  "tooltip.enderportal.portal_stone.trips": "每座门可往返：%s 次",
+  "tooltip.enderportal.portal_stone.channel": "引导时间：%s 秒",
+  "tooltip.enderportal.portal_stone.lore": "这块石头似乎蕴含着末影的全部力量......",
+  "hud.enderportal.channeling": "引导中…… %s%%",
+  "message.enderportal.cooldown": "传送石还在充能……",
+  "message.enderportal.no_target": "没有找到合适的群系，请再试一次。",
+  "message.enderportal.created": "已开启通往「%s」的传送门，可往返 %s 次。",
+  "message.enderportal.previous_closed": "上一座传送门已经消散了。",
+  "message.enderportal.remaining": "传送门剩余使用次数：%s",
+  "message.enderportal.expired": "传送门已经消散了。",
+  "message.enderportal.stone_uses_left": "传送石还能使用 %s 次",
+  "message.enderportal.stone_exhausted": "传送石耗尽了最后的力量，化为尘埃。",
+  "message.enderportal.unknown_biome": "未知之地"
+}

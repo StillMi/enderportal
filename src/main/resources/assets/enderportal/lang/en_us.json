@@ -1,0 +1,19 @@
+{
+  "item.enderportal.portal_stone": "Ender Portal Stone",
+  "block.enderportal.remote_portal": "Remote Portal",
+  "tooltip.enderportal.portal_stone": "Hold right-click to channel a two-way portal to a distant, different biome.",
+  "tooltip.enderportal.portal_stone.uses": "Portals left to open: %s / %s",
+  "tooltip.enderportal.portal_stone.trips": "Round trips per portal: %s",
+  "tooltip.enderportal.portal_stone.channel": "Channel time: %s s",
+  "tooltip.enderportal.portal_stone.lore": "This stone seems to hold all the power of the End......",
+  "hud.enderportal.channeling": "Channeling... %s%%",
+  "message.enderportal.cooldown": "The stone is still recharging.",
+  "message.enderportal.no_target": "No suitable biome was found. Try again.",
+  "message.enderportal.created": "A portal to %s has opened (%s round trips).",
+  "message.enderportal.previous_closed": "Your previous portal has faded away.",
+  "message.enderportal.remaining": "Portal uses left: %s",
+  "message.enderportal.expired": "The portal has faded away.",
+  "message.enderportal.stone_uses_left": "The stone can open %s more portals.",
+  "message.enderportal.stone_exhausted": "The stone crumbles, its last spark spent.",
+  "message.enderportal.unknown_biome": "an unknown land"
+}

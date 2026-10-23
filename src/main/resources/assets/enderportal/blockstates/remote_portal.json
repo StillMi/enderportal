@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "enderportal:block/remote_portal"
+    }
+  }
+}
