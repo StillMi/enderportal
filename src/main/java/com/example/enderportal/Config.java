@@ -13,6 +13,7 @@ public final class Config {
     public static final ModConfigSpec.IntValue ROUND_TRIPS;
     public static final ModConfigSpec.IntValue MIN_DISTANCE;
     public static final ModConfigSpec.IntValue MAX_DISTANCE;
+    public static final ModConfigSpec.IntValue AIM_DISTANCE;
     public static final ModConfigSpec SPEC;
 
     static {
@@ -39,6 +40,10 @@ public final class Config {
         MAX_DISTANCE = builder
                 .comment("传送门另一端距离玩家最远多少格。")
                 .defineInRange("maxDistance", 2048, 64, 30000);
+
+        AIM_DISTANCE = builder
+                .comment("门开在视线瞄准的位置，这是瞄准的最大距离（格）。")
+                .defineInRange("aimDistance", 24, 4, 64);
 
         builder.pop();
         SPEC = builder.build();

@@ -16,9 +16,11 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.StairBlock;
@@ -26,6 +28,9 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -53,6 +58,10 @@ import java.util.List;
  *
  * <p>失效规则：次数用尽、或任意一个组成方块被破坏，两端整座门（含高台和台阶）
  * 都会被完全清除，不留遗迹。</p>
+ *
+ * <p>近端的门开在玩家<b>视线瞄准的位置</b>：先做一次方块射线检测取瞄准的方块，
+ * 再在那一列上下找最近的地面；地形放不下（悬崖边、水面、太陡）就挪到最近的平地，
+ * 保证门不会悬空。</p>
  */
 public final class PortalManager {
 
@@ -77,8 +86,21 @@ public final class PortalManager {
     /** 支撑填充的底部相对底梁的偏移，拆除时用同一份常量，保证能拆干净。 */
     private static final int FILL_BOTTOM_OFFSET = -BASE_OFFSET;
 
-    /** 生成时玩家与门之间的距离，玩家正好站在最外侧台阶前。 */
+    /** 生成时玩家与门之间的距离，玩家正好站在最外侧台阶前（只在没瞄准方块时使用）。 */
     private static final int APPROACH_DISTANCE = STEP_COUNT + 3;
+
+    /** 瞄准点附近最多挪几格去找一块能站人的平地（切比雪夫距离）。 */
+    private static final int MAX_ANCHOR_SHIFT = 3;
+    /** 在瞄准的那一列上，向下最多找多少格地面。 */
+    private static final int GROUND_SEARCH_DOWN = 32;
+    /** 在瞄准的那一列上，向上最多找多少格地面（瞄准洞穴顶部之类的情况）。 */
+    private static final int GROUND_SEARCH_UP = 8;
+    /** 结构占地范围内，每列只在参考高度上下这么多格内找地面，避免把门架在悬崖底下。 */
+    private static final int FOOTPRINT_WINDOW = 4;
+    /** 占地范围内地面最大落差，超过就说明地形太陡，换个位置。 */
+    private static final int MAX_FOOTPRINT_SPREAD = 3;
+    /** 同一列上最多试几层地面（瞄准树冠时往下多试几层就能落回林地）。 */
+    private static final int MAX_GROUND_CANDIDATES = 4;
 
     /**
      * 拆门重入保护：拆除过程中 setBlock 会再次触发 onRemove，
@@ -122,33 +144,45 @@ public final class PortalManager {
     /* 对外入口                                                            */
     /* ------------------------------------------------------------------ */
 
+    /** 开门结果，用来给玩家不同的提示。 */
+    public enum Result {
+        /** 成功。 */
+        OK,
+        /** 瞄准点附近找不到能站人的地面。 */
+        NO_GROUND,
+        /** 玩家自己站在结构将要占用的位置上。 */
+        TOO_CLOSE,
+        /** 找不到另一个群系的落点。 */
+        NO_TARGET
+    }
+
     /**
-     * 在玩家面前开一对门：一座在玩家前方（台阶朝向玩家），另一座在别的生物群系。
-     * 开门前会先把该玩家上一对还没失效的门清掉。
+     * 在玩家<b>瞄准的位置</b>开一对门：一座在鼠标指定的方块上（台阶朝向玩家），
+     * 另一座在别的生物群系。开门前会先把该玩家上一对还没失效的门清掉。
      *
-     * @return 是否成功
+     * <p>瞄准点本身可能悬空（树叶、半空中的方块、悬崖侧面），所以先在那一列上下
+     * 找最近的地面；那一列实在放不下，就按距离由近到远挪到邻近的平地，
+     * 避免出现"门挂在半空"。</p>
      */
-    public static boolean openPortalPair(ServerLevel level, ServerPlayer player) {
+    public static Result openPortalPair(ServerLevel level, ServerPlayer player) {
         Direction front = player.getDirection().getOpposite();
-        Direction lateral = front.getCounterClockWise();
 
-        // 结构沿 front 方向朝玩家延伸（台阶在门与玩家之间）；
-        // 再横向偏移一格，让 4 格宽的框架正好以玩家为中心
-        BlockPos probe = player.blockPosition()
-                .relative(front.getOpposite(), APPROACH_DISTANCE)
-                .offset(-lateral.getStepX(), 0, -lateral.getStepZ());
-        int[][] surfaces = footprintSurfaces(level, probe, front);
-        int ground = Mth.clamp(minOf(surfaces), player.blockPosition().getY() - 2,
-                player.blockPosition().getY() + 1);
-        BlockPos origin = new BlockPos(probe.getX(), ground + BASE_OFFSET, probe.getZ());
+        BlockPos aim = aimTarget(level, player);
+        // 视线没打到方块（对着天空）：退回到"玩家正前方"的老位置
+        BlockPos anchor = aim != null ? aim : fallbackAnchor(player, front);
+        int referenceY = (aim != null ? aim.getY() : player.blockPosition().getY()) + 1;
 
-        if (!hasRoom(level, origin, front)) {
-            return false;
+        BlockPos origin = resolveOrigin(level, anchor, referenceY, front);
+        if (origin == null) {
+            return Result.NO_GROUND;
+        }
+        if (!playerClear(player, origin, front)) {
+            return Result.TOO_CLOSE;
         }
 
         BlockPos target = findTarget(level, player.blockPosition(), front);
         if (target == null) {
-            return false;
+            return Result.NO_TARGET;
         }
 
         // 先把上一对门清掉
@@ -165,7 +199,7 @@ public final class PortalManager {
         player.displayClientMessage(Component.translatable("message.enderportal.created",
                 biomeName, uses / 2).withStyle(ChatFormatting.LIGHT_PURPLE), false);
 
-        return true;
+        return Result.OK;
     }
 
     /** 让该玩家上一对门失效（如果还在的话）。 */
@@ -239,17 +273,178 @@ public final class PortalManager {
     }
 
     /* ------------------------------------------------------------------ */
+    /* 瞄准 / 落地                                                          */
+    /* ------------------------------------------------------------------ */
+
+    /**
+     * 玩家视线（鼠标）指向的方块。
+     *
+     * <p>服务端用玩家眼睛位置 + 视线方向做一次方块射线检测，距离上限是配置里的
+     * {@code aimDistance}。对着天空或超出距离时返回 {@code null}。</p>
+     */
+    public static BlockPos aimTarget(ServerLevel level, ServerPlayer player) {
+        double reach = Math.max(2, Config.AIM_DISTANCE.get());
+        Vec3 eye = player.getEyePosition(1.0F);
+        Vec3 end = eye.add(player.getViewVector(1.0F).scale(reach));
+        BlockHitResult hit = level.clip(new ClipContext(eye, end,
+                ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, player));
+        return hit.getType() == HitResult.Type.BLOCK ? hit.getBlockPos() : null;
+    }
+
+    /** 视线没打到方块时，退回到"玩家正前方"的落点（台阶正对玩家）。 */
+    private static BlockPos fallbackAnchor(ServerPlayer player, Direction front) {
+        Direction lateral = front.getCounterClockWise();
+        return player.blockPosition()
+                .relative(front.getOpposite(), APPROACH_DISTANCE)
+                .offset(-lateral.getStepX(), 0, -lateral.getStepZ());
+    }
+
+    /**
+     * 从瞄准的那一列出发，找一块放得下整座门的平地，并换算出结构原点。
+     *
+     * <p>先在这一列上下按"离瞄准点最近"的顺序逐个试地面高度 —— 瞄准树干、树叶、
+     * 悬空方块时，最近的那一层往往站不住整座门，再往下试就能落回真正的地面。
+     * 这一列全都放不下（悬崖边、水面、太陡），再按距离由近到远试邻近的列。</p>
+     *
+     * @return 结构原点；放不下返回 {@code null}
+     */
+    private static BlockPos resolveOrigin(ServerLevel level, BlockPos anchor, int referenceY, Direction front) {
+        Direction lateral = front.getCounterClockWise();
+        for (int radius = 0; radius <= MAX_ANCHOR_SHIFT; radius++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) {
+                        continue;
+                    }
+                    int x = anchor.getX() + dx;
+                    int z = anchor.getZ() + dz;
+                    // 让瞄准的这一列落在高台中央（局部 x=2, z=1）
+                    BlockPos probe = new BlockPos(
+                            x - lateral.getStepX() * 2 - front.getStepX(), 0,
+                            z - lateral.getStepZ() * 2 - front.getStepZ());
+
+                    for (int ground : groundCandidates(level, x, z, referenceY,
+                            GROUND_SEARCH_DOWN, GROUND_SEARCH_UP, MAX_GROUND_CANDIDATES)) {
+                        int[][] surfaces = footprintSurfaces(level, probe, front, ground);
+                        if (surfaces == null || maxOf(surfaces) - minOf(surfaces) > MAX_FOOTPRINT_SPREAD) {
+                            continue; // 这一层地形太陡，往下试
+                        }
+                        // 从占地范围内最低的一列开始垫，整座高台都踩在地上
+                        BlockPos origin = new BlockPos(probe.getX(), minOf(surfaces) + BASE_OFFSET, probe.getZ());
+                        if (hasRoom(level, origin, front)) {
+                            return origin;
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /** 结构会不会把玩家自己圈进去（瞄准脚下时）。 */
+    private static boolean playerClear(ServerPlayer player, BlockPos origin, Direction front) {
+        for (int lx = -1; lx <= FRAME_WIDTH; lx++) {
+            for (int lz = -1; lz <= STEP_COUNT + 2; lz++) {
+                BlockPos pos = localPos(origin, front, lx, 0, lz);
+                if (pos.getX() == player.getBlockX() && pos.getZ() == player.getBlockZ()) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 在 (x, z) 这一列上，从 {@code referenceY} 起上下交替地找最近的一个能站人的位置。
+     *
+     * @param maxDown 向下最多找多少格
+     * @param maxUp   向上最多找多少格
+     * @return 地面那一格的 y（脚踩的高度）；找不到返回 {@code null}
+     */
+    private static Integer groundNear(ServerLevel level, int x, int z, int referenceY, int maxDown, int maxUp) {
+        List<Integer> found = groundCandidates(level, x, z, referenceY, maxDown, maxUp, 1);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /**
+     * 在 (x, z) 这一列上，按离 {@code referenceY} 由近到远列出能站人的高度。
+     *
+     * <p>上下交替检查，距离相同时优先往下的那一格，这样"瞄准树顶"会先落到树冠上，
+     * 树冠放不下整座门时再继续往下找到真正的林地。</p>
+     *
+     * @param limit 最多返回几个候选，避免在深坑里一次列出几十个高度
+     */
+    private static List<Integer> groundCandidates(ServerLevel level, int x, int z, int referenceY,
+                                                  int maxDown, int maxUp, int limit) {
+        List<Integer> out = new ArrayList<>(limit);
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        int minY = level.getMinBuildHeight();
+        int maxY = level.getMaxBuildHeight() - 1;
+        int reach = Math.max(maxDown, maxUp);
+        for (int distance = 0; distance <= reach && out.size() < limit; distance++) {
+            if (distance <= maxDown) {
+                int y = referenceY - distance;
+                if (y >= minY) {
+                    cursor.set(x, y, z);
+                    if (isStandable(level, cursor)) {
+                        out.add(y);
+                    }
+                }
+            }
+            if (distance > 0 && distance <= maxUp) {
+                int y = referenceY + distance;
+                if (y <= maxY) {
+                    cursor.set(x, y, z);
+                    if (isStandable(level, cursor)) {
+                        out.add(y);
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 这一格能不能站人：本身是空的（能被替换），下面一格顶面结实，且不在水里。
+     *
+     * <p>树叶单独排除掉 —— 树冠顶面"看起来"是实心的，但把门架在树上同样算悬空，
+     * 应该继续往下找真正的地面。水面、半空中的方块也会因此被跳过。</p>
+     */
+    private static boolean isStandable(ServerLevel level, BlockPos.MutableBlockPos pos) {
+        BlockState here = level.getBlockState(pos);
+        if (!here.getFluidState().isEmpty() || !here.canBeReplaced()) {
+            return false;
+        }
+        BlockPos below = pos.below();
+        BlockState floor = level.getBlockState(below);
+        if (!floor.getFluidState().isEmpty() || floor.is(BlockTags.LEAVES)) {
+            return false;
+        }
+        return floor.isFaceSturdy(level, below, Direction.UP);
+    }
+
+    /* ------------------------------------------------------------------ */
     /* 地形 / 生物群系 / 落点搜索                                            */
     /* ------------------------------------------------------------------ */
 
-    /** 结构占地范围内所有列的地表高度（局部 lx=-1..4, lz=-1..5）。 */
-    private static int[][] footprintSurfaces(ServerLevel level, BlockPos origin, Direction front) {
+    /**
+     * 结构占地范围内所有列的地面高度（局部 lx=-1..4, lz=-1..5）。
+     *
+     * <p>每一列都在 {@code referenceY} 上下 {@link #FOOTPRINT_WINDOW} 格内找"脚下结实、
+     * 本身是空的"那一格，所以树叶、水面、悬空方块都不会被当成地面。
+     * 只要有一列找不到地面（悬崖边、水面），就返回 {@code null}。</p>
+     */
+    private static int[][] footprintSurfaces(ServerLevel level, BlockPos origin, Direction front, int referenceY) {
         int[][] surfaces = new int[FRAME_WIDTH + 2][STEP_COUNT + 4];
         for (int ix = 0; ix < surfaces.length; ix++) {
             for (int iz = 0; iz < surfaces[ix].length; iz++) {
                 BlockPos pos = localPos(origin, front, ix - 1, 0, iz - 1);
-                surfaces[ix][iz] = level.getHeightmapPos(
-                        Heightmap.Types.WORLD_SURFACE, new BlockPos(pos.getX(), 0, pos.getZ())).getY();
+                Integer ground = groundNear(level, pos.getX(), pos.getZ(), referenceY,
+                        FOOTPRINT_WINDOW, FOOTPRINT_WINDOW);
+                if (ground == null) {
+                    return null;
+                }
+                surfaces[ix][iz] = ground;
             }
         }
         return surfaces;
@@ -331,24 +526,17 @@ public final class PortalManager {
             level.getChunk(x >> 4, z >> 4);
             generated++;
 
-            BlockPos surface = level.getHeightmapPos(Heightmap.Types.WORLD_SURFACE, new BlockPos(x, 0, z));
-            if (!level.getFluidState(surface).isEmpty()) {
-                continue; // 水面 / 岩浆面
-            }
-            BlockPos below = surface.below();
-            if (!level.getBlockState(below).isFaceSturdy(level, below, Direction.UP)) {
-                continue; // 树叶、浮冰之类
-            }
-
             // 让这一列落在高台中央（局部 x=2, z=1）
+            BlockPos surface = level.getHeightmapPos(Heightmap.Types.WORLD_SURFACE, new BlockPos(x, 0, z));
             Direction lateral = front.getCounterClockWise();
             BlockPos probe = new BlockPos(
                     surface.getX() - lateral.getStepX() * 2 - front.getStepX(),
                     0,
                     surface.getZ() - lateral.getStepZ() * 2 - front.getStepZ());
 
-            int[][] surfaces = footprintSurfaces(level, probe, front);
-            if (maxOf(surfaces) - minOf(surfaces) > 3) {
+            // 每一列都真的找到"站得住的地面"才建；水面、树叶、悬崖边会被跳过
+            int[][] surfaces = footprintSurfaces(level, probe, front, surface.getY());
+            if (surfaces == null || maxOf(surfaces) - minOf(surfaces) > MAX_FOOTPRINT_SPREAD) {
                 continue; // 地形起伏太大，高台会很难看
             }
             BlockPos origin = new BlockPos(probe.getX(), minOf(surfaces) + BASE_OFFSET, probe.getZ());

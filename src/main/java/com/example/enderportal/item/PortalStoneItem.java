@@ -25,7 +25,8 @@ import java.util.List;
  * 末影传送石。
  *
  * <p>长按右键<b>引导 4 秒</b>（可配置），松手或引导完成前切换物品都会中断、不消耗次数。
- * 引导成功后会在玩家面前开一座「台阶 + 高台 + 门」的结构，
+ * 引导成功后会在玩家<b>视线瞄准的位置</b>开一座「台阶 + 高台 + 门」的结构
+ * （瞄准点悬空时会自动落到最近的地面上），
  * 并在一个<b>不同生物群系</b>的远处开另一座相连的门。</p>
  *
  * <p>引导进度条由客户端 {@code ChannelHud} 绘制，数据来自原版同步的
@@ -83,9 +84,9 @@ public class PortalStoneItem extends Item {
             return stack;
         }
 
-        if (!PortalManager.openPortalPair(serverLevel, player)) {
-            player.displayClientMessage(
-                    Component.translatable("message.enderportal.no_target").withStyle(ChatFormatting.RED), true);
+        PortalManager.Result result = PortalManager.openPortalPair(serverLevel, player);
+        if (result != PortalManager.Result.OK) {
+            player.displayClientMessage(failureMessage(result), true);
             return stack; // 失败不扣次数、不进冷却
         }
 
@@ -117,6 +118,16 @@ public class PortalStoneItem extends Item {
     @Override
     public void releaseUsing(ItemStack stack, Level level, LivingEntity entity, int timeLeft) {
         // 有意留空
+    }
+
+    /** 开门失败时的提示，按原因分开，玩家才知道该往哪儿瞄。 */
+    private static Component failureMessage(PortalManager.Result result) {
+        String key = switch (result) {
+            case NO_GROUND -> "message.enderportal.no_ground";
+            case TOO_CLOSE -> "message.enderportal.too_close";
+            default -> "message.enderportal.no_target";
+        };
+        return Component.translatable(key).withStyle(ChatFormatting.RED);
     }
 
     @Override
