@@ -73,7 +73,7 @@ public class RemotePortalBlock extends Block implements EntityBlock {
                 && !PortalManager.isBuilding()) {
             // super.onRemove 会移除方块实体，所以必须先读
             if (level.getBlockEntity(pos) instanceof RemotePortalBlockEntity portal) {
-                LOGGER.info("[enderportal] portal block removed at {} -> {}, tearing down the pair", pos, newState);
+                LOGGER.debug("[enderportal] portal block removed at {} -> {}, tearing down the pair", pos, newState);
                 portal.onComponentBroken(serverLevel, pos);
             }
         } else if (!level.isClientSide() && PortalManager.isBuilding()) {

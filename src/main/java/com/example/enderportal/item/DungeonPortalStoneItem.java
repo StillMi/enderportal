@@ -58,7 +58,7 @@ public class DungeonPortalStoneItem extends AbstractPortalStoneItem {
         tooltip.add(Component.translatable("tooltip.enderportal.dungeon_stone.trips", Config.ROUND_TRIPS.get())
                 .withStyle(ChatFormatting.DARK_PURPLE));
         tooltip.add(Component.translatable("tooltip.enderportal.dungeon_stone.search",
-                Config.DUNGEON_SEARCH_CHUNKS.get() * 16)
+                Config.DUNGEON_RADIUS_CHUNKS.get() * 16)
                 .withStyle(ChatFormatting.DARK_PURPLE));
     }
 }

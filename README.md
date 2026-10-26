@@ -1,10 +1,25 @@
-# 末影传送石 (Ender Portal Stone) v1.07
+# 末影传送石 (Ender Portal Stone) v1.08
 
 一个 Minecraft **1.21.1 / NeoForge 21.1.x** 小模组：用 8 块黑曜石 + 1 颗末影珍珠合成一颗"石头"，
 **长按右键引导 4 秒**（屏幕下方有进度条）后，在**你鼠标瞄准的位置**与**另一个生物群系**之间
 打开一对相通的「台阶 + 高台 + 传送门」，**每人**往返 2 次后自动失效，每次使用有 1 分钟冷却。
 一块传送石最多只能开门 **3 次**，用完即毁；每次新开门，上一座还没失效的门会自动消散。
 
+> **v1.08 内部整改**（玩法没变，改的是会伤到存档和卡顿的地方）：
+>
+> 1. **不再拿过期坐标拆方块** —— 新开门时会让上一座门失效，而注册表里的旧条目在门自然
+>    失效后不会立刻清掉。以前是不管还在不在都拆，等于拿一段过期坐标把 4×5 范围内**所有
+>    黑曜石和磨制黑石台阶**（包括玩家自己搭的）清成空气。现在先确认结构真的还在，
+>    不在就只清记录、一根方块都不碰。
+> 2. **建门失败只拆建成的那一端** —— 以前无差别拆两端，没建成那一端的坐标上可能是玩家的方块。
+> 3. **落点清理只清自己的方块** —— 传送落点会把卡人的方块清成空气，现在只清黑曜石 / 台阶 /
+>    门面这些自己放的，以及草、雪、花这类本来就可替换的；带方块实体的（刷怪笼、箱子）永不动。
+> 4. **找远端群系不再一次生成 6 个区块** —— 上限降到 3，并在完整生成前先用已有高度图粗筛，
+>    满 2048 格开一次门不会再卡好几秒。
+> 5. **瞄准判定更快** —— 找落点时会反复探测同一批列和高度，现在整轮共用一个按需填充的缓存。
+> 6. **旧存档的"僵尸门"会被清掉** —— 旧版迁移出来的、次数已归零却既不消失也不能用的门，
+>    读档后会被移除。
+>
 > **v1.07 变更**：
 >
 > 1. **传送后 5 秒冷却** —— 传送完要等 5 秒才能再次被传送，避免在门口反复弹
@@ -268,7 +283,7 @@ othersLeft   : { 玩家UUID -> 剩余 }  ← 这里归零只影响那个人自�
 1. `File → Open` 选择本目录（`enderportal`），以 Gradle 项目导入。
 2. 等待依赖下载完成（首次会从 `maven.neoforged.net` 拉取 NeoForge）。
 3. 右侧 Gradle 面板 → `Tasks → neoforge runs → runClient` 启动开发客户端。
-4. `Tasks → build → build` 生成 `build/libs/enderportal-1.07.jar`，丢进 `mods/` 即可。
+4. `Tasks → build → build` 生成 `build/libs/enderportal-1.08.jar`，丢进 `mods/` 即可。
 
 ### 方式 B：命令行（Gradle）
 
@@ -284,7 +299,7 @@ Gradle 在某些环境里起不来（`native-platform.dll` 加载失败）时，
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\compile.ps1   # 调 JBR 的 javac 直接编译 -> build\classes
-python tools\package.py                                      # 把 class + 资源打成 jar -> build\libs\enderportal-1.07.jar
+python tools\package.py                                      # 把 class + 资源打成 jar -> build\libs\enderportal-1.08.jar
 ```
 
 > `compile.ps1` 必须带 UTF-8 BOM 保存，否则 Windows PowerShell 5.1 会按 GBK 解析中文注释而报语法错。
@@ -294,9 +309,9 @@ python tools\package.py                                      # 把 class + 资�
 `tools\package.py` 会把 `neoforge.mods.toml` / `pack.mcmeta` 里的 `${...}` 用 `gradle.properties`
 展开，并固定 zip 时间戳，所以同样的输入永远得到同样的 jar（可复现）。
 
-产物：`build/libs/enderportal-1.07.jar`（装到 NeoForge 21.1.x 的 `mods` 目录）。
+产物：`build/libs/enderportal-1.08.jar`（装到 NeoForge 21.1.x 的 `mods` 目录）。
 
-> **本工程已经预置了一个编译好的成品**：`build/libs/enderportal-1.07.jar`
+> **本工程已经预置了一个编译好的成品**：`build/libs/enderportal-1.08.jar`
 > （36 个条目，class 全部是 Java 21 字节码，已用 `javac --release 21` 对真实
 > NeoForge 21.1.72 类路径编译通过，zip 完整性和 class 哈希都已核对）。
 > 重新构建会覆盖它。放到 `.minecraft/mods/` 里、启动 NeoForge 21.1.x 即可加载。
@@ -364,7 +379,7 @@ ModDevGradle 是 NeoForge 官方现在主推的构建插件，插件本体发布
 2. 把 `tools/build.gradle.moddev` 复制成根目录的 `build.gradle`
 3. 重新同步 / `.\gradlew build`
 
-两种构建脚本的产物完全一样（`build/libs/enderportal-1.07.jar`），代码不用改一行。
+两种构建脚本的产物完全一样（`build/libs/enderportal-1.08.jar`），代码不用改一行。
 
 ### 其他常见报错
 
@@ -524,7 +539,7 @@ src/main/java/com/example/enderportal/
 
 ## 7. 已知情况（重要）
 
-- **v1.07 的代码已用 `javac --release 21` 对真实的 NeoForge 21.1.72 类路径编译通过**
+- **v1.08 的代码已用 `javac --release 21` 对真实的 NeoForge 21.1.72 类路径编译通过**
   （13 个源文件 → 20 个 class，`-Xlint:all` 无警告），jar 也已按同一份 class 打包。
   但**没有进游戏实测**（沙箱里 Gradle 无法启动，也起不了客户端），
   所以"瞄准点吸附到地面"的实际手感、结构生成位置、地牢定位的命中率、进度条位置、

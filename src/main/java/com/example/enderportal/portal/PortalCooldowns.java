@@ -3,9 +3,9 @@ package com.example.enderportal.portal;
 import com.example.enderportal.Config;
 import net.minecraft.world.entity.Entity;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 传送冷却表。
@@ -15,6 +15,9 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>另外还管一条"提示冷却"：个人次数用完后玩家站在门里会每 tick 触发一次判定，
  * 没有节流的话聊天栏/动作栏会被刷屏。</p>
+ *
+ * <p>只在服务端主线程被调用，所以用普通 {@link HashMap}；跨线程没有任何收益，
+ * 反而多一层内存屏障。</p>
  */
 public final class PortalCooldowns {
 
@@ -22,8 +25,13 @@ public final class PortalCooldowns {
     private static final int HINT_TICKS = 40;
     private static final int MAX_ENTRIES = 8192;
 
-    private static final Map<UUID, Long> LAST_PASS = new ConcurrentHashMap<>();
-    private static final Map<UUID, Long> LAST_HINT = new ConcurrentHashMap<>();
+    /** 同一实体两个计时戳，省掉两张表各自清理。 */
+    private static final class Stamps {
+        long pass = Long.MIN_VALUE;
+        long hint = Long.MIN_VALUE;
+    }
+
+    private static final Map<UUID, Stamps> STAMPS = new HashMap<>();
 
     private PortalCooldowns() {
     }
@@ -32,32 +40,42 @@ public final class PortalCooldowns {
         return Math.max(0, Config.TELEPORT_DELAY_SECONDS.get()) * 20;
     }
 
+    private static Stamps stampsOf(UUID id) {
+        if (STAMPS.size() > MAX_ENTRIES) {
+            STAMPS.clear();
+        }
+        return STAMPS.computeIfAbsent(id, key -> new Stamps());
+    }
+
     /**
      * 记录一次传送并判断是否放行。
      *
      * @return {@code true} 表示可以传送（同时已经把时间戳记成"现在"）
      */
     public static boolean tryPass(Entity entity) {
+        int delay = delayTicks();
         long now = entity.level().getGameTime();
-        Long last = LAST_PASS.get(entity.getUUID());
-        if (last != null && now - last < delayTicks()) {
+        Stamps stamps = stampsOf(entity.getUUID());
+        // 延迟为 0 时等价于"每次都放行"，不需要比对时间
+        if (delay > 0 && Stamp.elapsed(now, stamps.pass) < delay) {
             return false;
         }
-        if (LAST_PASS.size() > MAX_ENTRIES) {
-            LAST_PASS.clear();
-        }
-        LAST_PASS.put(entity.getUUID(), now);
+        stamps.pass = now;
         return true;
     }
 
     /** 玩家还有多久才能再次传送（tick），仅用于提示。 */
     public static int remainingTicks(Entity entity) {
-        Long last = LAST_PASS.get(entity.getUUID());
-        if (last == null) {
+        int delay = delayTicks();
+        if (delay <= 0) {
             return 0;
         }
-        long left = delayTicks() - (entity.level().getGameTime() - last);
-        return (int) Math.max(0, left);
+        Stamps stamps = STAMPS.get(entity.getUUID());
+        if (stamps == null) {
+            return 0;
+        }
+        long elapsed = Stamp.elapsed(entity.level().getGameTime(), stamps.pass);
+        return (int) Math.max(0, delay - elapsed);
     }
 
     /**
@@ -67,14 +85,25 @@ public final class PortalCooldowns {
      */
     public static boolean tryHint(Entity entity) {
         long now = entity.level().getGameTime();
-        Long last = LAST_HINT.get(entity.getUUID());
-        if (last != null && now - last < HINT_TICKS) {
+        Stamps stamps = stampsOf(entity.getUUID());
+        if (Stamp.elapsed(now, stamps.hint) < HINT_TICKS) {
             return false;
         }
-        if (LAST_HINT.size() > MAX_ENTRIES) {
-            LAST_HINT.clear();
-        }
-        LAST_HINT.put(entity.getUUID(), now);
+        stamps.hint = now;
         return true;
+    }
+
+    /** 时间戳运算：从未设过时返回一个足够大的数，让调用方自然放行。 */
+    private static final class Stamp {
+        private Stamp() {
+        }
+
+        static long elapsed(long now, long since) {
+            if (since == Long.MIN_VALUE) {
+                return Long.MAX_VALUE;
+            }
+            // 跨维或者 /time set 让 gameTime 回退过也不会算出负数
+            return Math.max(0, now - since);
+        }
     }
 }

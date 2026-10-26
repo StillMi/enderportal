@@ -111,15 +111,6 @@ public class RemotePortalBlockEntity extends BlockEntity {
         return creator;
     }
 
-    public int getQuota() {
-        return quota;
-    }
-
-    /** 创造者还剩几次（门能活多久由它决定）。 */
-    public int getRemaining() {
-        return creatorLeft;
-    }
-
     /** 某个使用者在还能传送几次。 */
     public int leftFor(UUID actor) {
         if (actor.equals(creator)) {
@@ -149,27 +140,11 @@ public class RemotePortalBlockEntity extends BlockEntity {
         this.setChanged();
     }
 
-    public BlockPos getFrameOrigin() {
-        return frameOrigin;
-    }
-
-    public Direction getFrameFront() {
-        return frameFront;
-    }
-
-    public BlockPos getPartnerOrigin() {
-        return partnerOrigin;
-    }
-
-    public Direction getPartnerFront() {
-        return partnerFront;
-    }
-
     /**
      * 服务端每 tick 调用，但只有"主方块"真正执行结构自检，其余方块直接返回。
      */
     public void serverTick(ServerLevel level, BlockPos pos) {
-        if (!configured || creatorLeft <= 0) {
+        if (!configured) {
             return;
         }
         if (!pos.equals(PortalManager.masterPos(frameOrigin, frameFront))) {
@@ -184,6 +159,14 @@ public class RemotePortalBlockEntity extends BlockEntity {
             brokenChecks = 0;
             return;
         }
+        // 次数已经用尽的门不该继续立着。正常流程里 consumeUse 会在归零那次就把门拆掉，
+        // 但旧存档迁移（v1.06 的 Remaining 已经是 0）会留下这种门：
+        // 它既不能用、也不会自己消失，会永远杵在原地。这里补一次清理。
+        if (creatorLeft <= 0) {
+            LOGGER.debug("[enderportal] dropping an expired portal at {}", frameOrigin);
+            invalidatePair(level);
+            return;
+        }
         // 玩家把黑曜石框架拆了也算失效；但要连续两次都不完整才拆，
         // 免得建门或区块刚加载时的瞬时状态把好好的门拆掉
         if (PortalManager.isStructureIntact(level, frameOrigin, frameFront)) {
@@ -191,7 +174,7 @@ public class RemotePortalBlockEntity extends BlockEntity {
             return;
         }
         if (++brokenChecks >= BROKEN_CHECKS_BEFORE_INVALIDATE) {
-            LOGGER.info("[enderportal] frame no longer intact at {}, tearing down the pair", frameOrigin);
+            LOGGER.debug("[enderportal] frame no longer intact at {}, tearing down the pair", frameOrigin);
             invalidatePair(level);
         }
     }
@@ -343,6 +326,8 @@ public class RemotePortalBlockEntity extends BlockEntity {
             quota = Math.max(1, legacy);
             creatorLeft = legacy;
         }
+        // 注意：次数已经用尽的门在这里不能清 —— loadAdditional 拿不到 level。
+        // 清理交给 serverTick，见那里的 creatorLeft <= 0 分支。
     }
 
     private static Direction readDirection(String name) {
