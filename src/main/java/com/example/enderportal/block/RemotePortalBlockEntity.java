@@ -259,7 +259,10 @@ public class RemotePortalBlockEntity extends BlockEntity {
      * 所以这里不再碰冷却表，免得"排了队又被判冷却"把玩家静默丢下。</p>
      */
     public void executeTeleport(ServerLevel level, Entity entity) {
-        if (!configured || entity.isRemoved() || !entity.isAlive()) {
+        // isRemoved()：排队之后这座门可能已经被拆了（拆门时先 setRemoved 再清方块），
+        // 这时 configured 还可能是 true（拆门走的是另一份方块实体），
+        // 不加这道检查就会把人送到一座已经不存在的门上
+        if (!configured || isRemoved() || entity.isRemoved() || !entity.isAlive()) {
             PortalCooldowns.releasePass(entity);
             return;
         }
@@ -276,10 +279,16 @@ public class RemotePortalBlockEntity extends BlockEntity {
             return;
         }
 
-        // 落点：对面高台的正中央，玩家站在高台面上、面朝台阶（门外）
-        double tx = PortalManager.localX(partnerOrigin, partnerFront, 2.0D, 1.5D);
+        // 落点：对面高台的正中央，玩家站在高台面上、面朝台阶（门外）。
+        // 多人几乎同时穿门时，固定落点会让两个人落在<b>完全相同</b>的坐标上，
+        // 原版碰撞会把其中一个挤出去（运气差就挤下高台）。
+        // 这里按实体 UUID 取一个确定性的微小偏移，把落点在高台面上摊开；
+        // 高台宽 4 格、深 2 格，偏移控制在 ±0.75 / ±0.25 格内，不会踩空。
+        double spreadX = ((entity.getUUID().hashCode() & 0xFF) / 255.0D - 0.5D) * 1.5D;
+        double spreadZ = (((entity.getUUID().hashCode() >>> 8) & 0xFF) / 255.0D - 0.5D) * 0.5D;
+        double tx = PortalManager.localX(partnerOrigin, partnerFront, 2.0D + spreadX, 1.5D + spreadZ);
         double ty = partnerOrigin.getY() + 1.0D;
-        double tz = PortalManager.localZ(partnerOrigin, partnerFront, 2.0D, 1.5D);
+        double tz = PortalManager.localZ(partnerOrigin, partnerFront, 2.0D + spreadX, 1.5D + spreadZ);
 
         // 保证落点不是实心方块，避免卡墙/窒息
         PortalManager.clearLandingSpace(level, BlockPos.containing(tx, ty, tz));

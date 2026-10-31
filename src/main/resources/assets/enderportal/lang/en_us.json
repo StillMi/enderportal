@@ -26,5 +26,6 @@
   "message.enderportal.player_exhausted": "You have no trips left on this portal.",
   "message.enderportal.stone_uses_left": "The stone can open %s more portals.",
   "message.enderportal.stone_exhausted": "The stone crumbles, its last spark spent.",
-  "message.enderportal.unknown_biome": "an unknown land"
+  "message.enderportal.unknown_biome": "an unknown land",
+  "message.enderportal.step_aside": "The portal is open, but you are standing inside it - step aside"
 }

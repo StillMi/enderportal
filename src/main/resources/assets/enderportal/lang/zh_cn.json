@@ -26,5 +26,6 @@
   "message.enderportal.player_exhausted": "你在这座门的传送次数已经用完了。",
   "message.enderportal.stone_uses_left": "传送石还能使用 %s 次",
   "message.enderportal.stone_exhausted": "传送石耗尽了最后的力量，化为尘埃。",
-  "message.enderportal.unknown_biome": "未知之地"
+  "message.enderportal.unknown_biome": "未知之地",
+  "message.enderportal.step_aside": "门开好了，不过你正站在门里，挪一步就好"
 }

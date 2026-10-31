@@ -28,6 +28,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
@@ -227,11 +228,26 @@ public final class PortalManager {
         placeStructure(level, target, near.front(), near.origin(), near.front(), creator, uses, true);
         remember(level, player, near.origin(), near.front(), target, near.front());
 
+        warnIfSelfCovered(player, near.origin(), near.front());
+
         Component biomeName = biomeName(level, target);
         player.displayClientMessage(Component.translatable("message.enderportal.created",
                 biomeName, uses / 2).withStyle(ChatFormatting.LIGHT_PURPLE), false);
 
         return Result.OK;
+    }
+
+    /**
+     * 门开完之后，如果开门的人自己正好站在门里，提醒他挪一步。
+     *
+     * <p>建门时那片位置已经被挖空、方块也摆好了，所以人现在是在门洞/高台里，
+     * 不会窒息，走出去就好 —— 这比"因为你自己站太近，所以不给开"合理得多。</p>
+     */
+    private static void warnIfSelfCovered(ServerPlayer player, BlockPos origin, Direction front) {
+        if (playerCoversSelf(player, origin, front)) {
+            player.displayClientMessage(Component.translatable("message.enderportal.step_aside")
+                    .withStyle(ChatFormatting.GRAY), true);
+        }
     }
 
     /**
@@ -299,6 +315,8 @@ public final class PortalManager {
 
         remember(level, player, near.origin(), near.front(), dungeonOrigin, front);
 
+        warnIfSelfCovered(player, near.origin(), near.front());
+
         player.displayClientMessage(Component.translatable("message.enderportal.dungeon_created",
                 uses / 2).withStyle(ChatFormatting.LIGHT_PURPLE), false);
 
@@ -326,10 +344,10 @@ public final class PortalManager {
         if (aim != null) {
             BlockPos origin = resolveOrigin(level, aim, aim.getY() + 1, front);
             if (origin != null) {
-                if (playerClear(player, origin, front)) {
+                if (playerClear(level, player, origin, front)) {
                     return new NearEnd(origin, front, null);
                 }
-                // 瞄准点能放下，但会压到玩家自己
+                // 这一带能放下，但会把别的玩家埋进去
                 failure = Result.TOO_CLOSE;
             }
         }
@@ -337,7 +355,7 @@ public final class PortalManager {
         // 视线没打到方块，或者瞄准点那一带放不下：退回"玩家正前方"再试一次
         BlockPos fallback = fallbackAnchor(player, front);
         BlockPos origin = resolveOrigin(level, fallback, player.blockPosition().getY() + 1, front);
-        if (origin != null && playerClear(player, origin, front)) {
+        if (origin != null && playerClear(level, player, origin, front)) {
             return new NearEnd(origin, front, null);
         }
         return new NearEnd(null, front, failure);
@@ -801,23 +819,82 @@ public final class PortalManager {
     }
 
     /**
-     * 结构会不会把玩家自己封进去（瞄准脚下时）。
+     * 结构会不会把<b>人</b>封进去（瞄准脚下时）。
      *
-     * <p>只挡真正会压到玩家的格子：玩家脚 / 头所在的那两格如果正好要放<b>实体方块</b>，
+     * <p>只挡真正会压到人的格子：脚 / 头所在的那两格如果正好要放<b>实体方块</b>，
      * 才算"太近"。以前是拿整个占地范围（含台阶外沿和四周留白）去比 X/Z，
      * 玩家站在 5 格外都会被判太近，正常瞄准几乎必然触发。</p>
+     *
+     * <p><b>多人时不能只看开门那个人。</b>建门会先挖空一片、再摆方块，旁边站着的
+     * 另一个玩家会被直接埋进黑曜石里。所以这里把所有玩家都算上。</p>
+     *
+     * <p>不过两者区别对待：<b>别人</b>被压到就换个地方开（那人未必知道你在开门，
+     * 不该被埋）；<b>自己</b>被压到只是"太近"，因为开门的人自己挪一步就行，
+     * 不该因此开不出门。</p>
      */
-    private static boolean playerClear(ServerPlayer player, BlockPos origin, Direction front) {
-        BlockPos feet = player.blockPosition();
-        BlockPos head = feet.above();
-        for (Piece piece : pieces(origin, front,
-                EnderPortal.REMOTE_PORTAL.get().defaultBlockState(), true)) {
-            BlockPos pos = piece.pos();
-            if (pos.equals(feet) || pos.equals(head)) {
+    private static boolean playerClear(ServerLevel level, ServerPlayer player, BlockPos origin, Direction front) {
+        List<Piece> pieces = pieces(origin, front,
+                EnderPortal.REMOTE_PORTAL.get().defaultBlockState(), true);
+
+        // 先把真正会挡人的位置收成一个集合，再拿每个玩家去比，
+        // 免得"玩家数 × 方块数"地做双重循环
+        java.util.Set<BlockPos> solid = new java.util.HashSet<>(pieces.size() * 2);
+        for (Piece piece : pieces) {
+            if (blocksPlayer(piece.state())) {
+                solid.add(piece.pos());
+            }
+        }
+        if (solid.isEmpty()) {
+            return true;
+        }
+
+        // 别人会被埋：直接换个地方开
+        Box box = structureBox(origin, front, true);
+        AABB area = new AABB(
+                box.minX() - 1.0D, box.minY() - 1.0D, box.minZ() - 1.0D,
+                box.maxX() + 2.0D, box.maxY() + 2.0D, box.maxZ() + 2.0D);
+        for (ServerPlayer other : level.getEntitiesOfClass(ServerPlayer.class, area)) {
+            if (other != player && occupies(solid, other)) {
                 return false;
             }
         }
         return true;
+    }
+
+    /**
+     * 这个方块会不会真的把人卡住。
+     *
+     * <p>门面方块是 {@code noCollission()} 的 —— 玩家站在门洞里什么事都没有，
+     * 所以不能算"挡住"。多人时总有人在门口转悠，把它算进去会导致门一直开不出来。</p>
+     */
+    private static boolean blocksPlayer(BlockState state) {
+        return !state.canBeReplaced() && !state.is(EnderPortal.REMOTE_PORTAL.get());
+    }
+
+    /**
+     * 开门的人自己是不是被压到了。
+     *
+     * <p>单独拿出来：这种只算"太近"，会提示玩家挪一步，而不是判定这一带放不下。</p>
+     */
+    private static boolean playerCoversSelf(ServerPlayer player, BlockPos origin, Direction front) {
+        BlockPos feet = player.blockPosition();
+        BlockPos head = feet.above();
+        for (Piece piece : pieces(origin, front,
+                EnderPortal.REMOTE_PORTAL.get().defaultBlockState(), true)) {
+            if (!blocksPlayer(piece.state())) {
+                continue;
+            }
+            if (piece.pos().equals(feet) || piece.pos().equals(head)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 这个玩家的脚或头是不是正好落在 {@code solid} 里。 */
+    private static boolean occupies(java.util.Set<BlockPos> solid, ServerPlayer player) {
+        BlockPos feet = player.blockPosition();
+        return solid.contains(feet) || solid.contains(feet.above());
     }
 
     /**

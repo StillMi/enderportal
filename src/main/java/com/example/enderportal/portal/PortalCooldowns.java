@@ -3,7 +3,7 @@ package com.example.enderportal.portal;
 import com.example.enderportal.Config;
 import net.minecraft.world.entity.Entity;
 
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -16,7 +16,7 @@ import java.util.UUID;
  * <p>另外还管一条"提示冷却"：个人次数用完后玩家站在门里会每 tick 触发一次判定，
  * 没有节流的话聊天栏/动作栏会被刷屏。</p>
  *
- * <p>只在服务端主线程被调用，所以用普通 {@link HashMap}；跨线程没有任何收益，
+ * <p>只在服务端主线程被调用，所以用普通 {@link Map}；跨线程没有任何收益，
  * 反而多一层内存屏障。</p>
  */
 public final class PortalCooldowns {
@@ -31,7 +31,22 @@ public final class PortalCooldowns {
         long hint = Long.MIN_VALUE;
     }
 
-    private static final Map<UUID, Stamps> STAMPS = new HashMap<>();
+    /**
+     * 冷却表，按<b>最久未使用</b>淘汰。
+     *
+     * <p>以前是"超过上限就整表 clear()"。多人服务器跑久了会撞上这个上限，
+     * 而 clear() 的一瞬间<b>所有人的冷却和提示节流全部归零</b> ——
+     * 正站在门口的人立刻又能被传送一次。单人几乎碰不到，多人跑一天就可能。</p>
+     *
+     * <p>现在用访问序的 {@link LinkedHashMap}：超过上限只淘汰最久没被碰过的那一条，
+     * 其他人的计时戳不受影响。</p>
+     */
+    private static final Map<UUID, Stamps> STAMPS = new LinkedHashMap<>(256, 0.75F, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<UUID, Stamps> eldest) {
+            return size() > MAX_ENTRIES;
+        }
+    };
 
     private PortalCooldowns() {
     }
@@ -41,9 +56,6 @@ public final class PortalCooldowns {
     }
 
     private static Stamps stampsOf(UUID id) {
-        if (STAMPS.size() > MAX_ENTRIES) {
-            STAMPS.clear();
-        }
         return STAMPS.computeIfAbsent(id, key -> new Stamps());
     }
 
