@@ -488,8 +488,14 @@ public final class PortalManager {
      * 需要清就说明有人往门里塞了方块 —— 但那种方块可能是玩家的，不能随手清成空气。</p>
      *
      * <p>带方块实体的东西一律不动：地牢里的刷怪笼、战利品箱不会被落点清掉。</p>
+     *
+     * <p>落点所在的区块可能因为没人待在那儿而被卸载（多人的时候另一端常常是这种状态），
+     * 所以先把区块显式拉起来再动方块，避免 {@code getBlockState} 在传送路径上做隐式同步加载。</p>
      */
     public static void clearLandingSpace(ServerLevel level, BlockPos feet) {
+        // 先把落点那一片区块准备好：未加载时 getBlockState 会隐式加载，
+        // 那是在传送的关键路径上做重活，而且会让后面的 setBlockAndUpdate 更不稳
+        level.getChunkAt(feet);
         for (int i = 0; i < 2; i++) {
             BlockPos pos = feet.above(i);
             BlockState state = level.getBlockState(pos);
@@ -510,12 +516,20 @@ public final class PortalManager {
      * <p>次数是按人分开算的：只有<b>创造者</b>的计数归零才会拆掉整座门；
      * 其他玩家归零只是自己不能再传送，门继续开着。</p>
      *
+     * <p>两端各 6 个方块都存着一份完整计数（谁用了几次都在里面），所以这里必须
+     * <b>先读、改、再写回两端</b>。多人同时穿门时，两个调用会先后落在服务端主线程上，
+     * 每次都从最新的 {@code source} 读起，不会互相覆盖 —— 前提是写回时以
+     * {@code source} 为准整份复制（{@link RemotePortalBlockEntity#copyUsageFrom}），
+     * 而不是各改各的。</p>
+     *
      * @param actor 使用者（玩家 UUID，或非玩家实体共用的
      *              {@link RemotePortalBlockEntity#SHARED_ACTOR}）
      * @return 使用者扣完之后还剩几次；0 表示这次用完了
      */
     public static int consumeUse(ServerLevel level, BlockPos origin, Direction front,
                                  BlockPos partner, Direction partnerFront, UUID actor) {
+        // 固定以"本端"为权威，不要用另一端的实体当 source：
+        // 两端的 Map 顺序 / 加载时机可能不同，拿错一端会把过期的计数写回去
         RemotePortalBlockEntity source = firstPortal(level, origin, front);
         if (source == null) {
             return 0;

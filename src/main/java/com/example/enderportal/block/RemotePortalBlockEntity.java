@@ -3,6 +3,7 @@ package com.example.enderportal.block;
 import com.example.enderportal.EnderPortal;
 import com.example.enderportal.portal.PortalCooldowns;
 import com.example.enderportal.portal.PortalManager;
+import com.example.enderportal.portal.PortalTeleports;
 import com.mojang.logging.LogUtils;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
@@ -203,6 +204,11 @@ public class RemotePortalBlockEntity extends BlockEntity {
 
     /**
      * 实体踩进传送门方块时调用。
+     *
+     * <p><b>这里只做判定和登记，不真的传送。</b>这个方法是在 {@link Entity#move} 内部
+     * 被调用的，而 {@code move()} 又处在 {@code handleMovePlayer} 的调用栈里 ——
+     * 那个方法在 {@code move()} 返回后会用客户端上报的旧坐标做一次"位置纠偏"，
+     * 把刚传送走的玩家又拉回来，次数却已经扣掉了。详细说明见 {@link PortalTeleports}。</p>
      */
     public void onEntityInside(ServerLevel level, Entity entity) {
         if (!configured) {
@@ -212,10 +218,13 @@ public class RemotePortalBlockEntity extends BlockEntity {
         if (entity.isPassenger() || entity.isVehicle()) {
             return;
         }
+        // 一座门有 6 个方块，同一次移动检测会把 6 个方块实体各调一遍；只排一次队
+        if (PortalTeleports.isQueued(entity)) {
+            return;
+        }
 
         UUID actor = actorOf(entity);
-        int left = leftFor(actor);
-        if (left <= 0) {
+        if (leftFor(actor) <= 0) {
             // 这个人的次数已经用完：不传送，但门本身还开着（由创造者决定何时关闭）
             if (entity instanceof ServerPlayer player && PortalCooldowns.tryHint(entity)) {
                 player.displayClientMessage(Component.translatable("message.enderportal.player_exhausted")
@@ -224,7 +233,9 @@ public class RemotePortalBlockEntity extends BlockEntity {
             return;
         }
 
-        // 传送后要隔几秒才能再被传送，避免在门口反复弹
+        // 传送后要隔几秒才能再被传送，避免在门口反复弹。
+        // 冷却时间戳在这里就写入 —— 入队即视为"这次传送已经发生"，
+        // 否则同一次 checkInsideBlocks 的后续 tick 会立刻又排一次队
         if (!PortalCooldowns.tryPass(entity)) {
             if (entity instanceof ServerPlayer player && PortalCooldowns.tryHint(entity)) {
                 int seconds = (PortalCooldowns.remainingTicks(entity) + 19) / 20;
@@ -234,6 +245,34 @@ public class RemotePortalBlockEntity extends BlockEntity {
                             .withStyle(ChatFormatting.GRAY), true);
                 }
             }
+            return;
+        }
+
+        PortalTeleports.enqueue(this, level, entity);
+    }
+
+    /**
+     * 真正执行传送。由 {@link PortalTeleports} 在 tick 末尾调用，
+     * 此时已经脱离 {@code handleMovePlayer} 的调用栈。
+     *
+     * <p>冷却时间戳在入队时就已经写好了（{@code tryPass} 在 {@code onEntityInside} 里调用），
+     * 所以这里不再碰冷却表，免得"排了队又被判冷却"把玩家静默丢下。</p>
+     */
+    public void executeTeleport(ServerLevel level, Entity entity) {
+        if (!configured || entity.isRemoved() || !entity.isAlive()) {
+            PortalCooldowns.releasePass(entity);
+            return;
+        }
+        // 排队后实体可能已经被别处传走了（比如同一 tick 里进了另一座门），
+        // 那就别把它再从新位置拽过来
+        if (entity.level() != level) {
+            PortalCooldowns.releasePass(entity);
+            return;
+        }
+        // 排队之后可能被别的门先传走了、或者次数刚被用完，这里再确认一次
+        UUID actor = actorOf(entity);
+        if (leftFor(actor) <= 0) {
+            PortalCooldowns.releasePass(entity);
             return;
         }
 
@@ -252,6 +291,16 @@ public class RemotePortalBlockEntity extends BlockEntity {
         }
         entity.setDeltaMovement(Vec3.ZERO);
         entity.resetFallDistance();
+
+        // 硬保险：位置没真的变过去，就绝不扣次数。
+        // 这条路径以前出过事 —— 传送被 handleMovePlayer 的位置纠偏撤销，
+        // 次数却已经扣了，玩家表现为"一直传送失败、次数却被耗光"。
+        if (entity.position().distanceToSqr(tx, ty, tz) > 4.0D) {
+            LOGGER.warn("[enderportal] teleport to {} did not take effect for {}, not consuming a use",
+                    BlockPos.containing(tx, ty, tz), entity.getName().getString());
+            PortalCooldowns.releasePass(entity);
+            return;
+        }
 
         level.playSound(null, BlockPos.containing(tx, ty, tz), SoundEvents.PORTAL_TRAVEL,
                 SoundSource.BLOCKS, 0.7F, 1.0F);

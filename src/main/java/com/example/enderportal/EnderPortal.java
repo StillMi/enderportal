@@ -5,6 +5,7 @@ import com.example.enderportal.block.RemotePortalBlockEntity;
 import com.example.enderportal.item.AbstractPortalStoneItem;
 import com.example.enderportal.item.DungeonPortalStoneItem;
 import com.example.enderportal.item.PortalStoneItem;
+import com.example.enderportal.portal.PortalTeleports;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
@@ -18,6 +19,7 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
+import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
@@ -91,6 +93,10 @@ public class EnderPortal {
 
         modEventBus.addListener(this::addCreative);
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
+
+        // 传送不能在 entityInside 里就地执行（会被 handleMovePlayer 的位置纠偏拉回去），
+        // 统一排到 tick 末尾，见 PortalTeleports
+        NeoForge.EVENT_BUS.addListener(PortalTeleports::onServerTickPost);
     }
 
     private void addCreative(BuildCreativeModeTabContentsEvent event) {

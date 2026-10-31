@@ -1,10 +1,23 @@
-# 末影传送石 (Ender Portal Stone) v1.08
+# 末影传送石 (Ender Portal Stone) v1.09
 
 一个 Minecraft **1.21.1 / NeoForge 21.1.x** 小模组：用 8 块黑曜石 + 1 颗末影珍珠合成一颗"石头"，
 **长按右键引导 4 秒**（屏幕下方有进度条）后，在**你鼠标瞄准的位置**与**另一个生物群系**之间
 打开一对相通的「台阶 + 高台 + 传送门」，**每人**往返 2 次后自动失效，每次使用有 1 分钟冷却。
 一块传送石最多只能开门 **3 次**，用完即毁；每次新开门，上一座还没失效的门会自动消散。
 
+> **v1.09 修复**（多人游戏下传送失败却照样扣次数）：
+>
+> 1. **传送不再被"位置纠偏"撤销** —— 门方块的 `entityInside` 是被 `Entity.move()` 调用的，
+>    而 `move()` 又在 `handleMovePlayer` 的调用栈里。那个方法在 `move()` 返回后会拿客户端上报的
+>    **旧坐标**做一次纠偏，把刚传送走的玩家又拉回来。现在 `entityInside` 只登记，
+>    真正的传送排到 `ServerTickEvent.Post` 执行，那时已经脱离那个调用栈。
+> 2. **扣次数改到传送真正成功之后** —— 传送后检查坐标是否真的落在目标点，没落过去就不扣次数，
+>    并回滚冷却时间戳，不让玩家白等。以前"传送失败但次数照扣"会累积成把门耗光。
+> 3. **落点区块先显式加载** —— 多人时另一端常常是未加载状态，以前 `getBlockState` 会在
+>    传送关键路径上做隐式同步加载。
+>
+> 这个问题单人很难复现：多人下客户端移动包更密集，几乎必然走那条会撤销传送的路径。
+>
 > **v1.08 内部整改**（玩法没变，改的是会伤到存档和卡顿的地方）：
 >
 > 1. **不再拿过期坐标拆方块** —— 新开门时会让上一座门失效，而注册表里的旧条目在门自然
@@ -272,6 +285,36 @@ othersLeft   : { 玩家UUID -> 剩余 }  ← 这里归零只影响那个人自�
 > 兼容旧存档：v1.06 及更早的 `Remaining` 标签会在读档时自动迁移成
 > "创造者个人计数器"，行为不变，只是其他玩家从此有了自己的配额。
 
+### v1.09：为什么多人时传送会失败还把次数扣光
+
+`RemotePortalBlock` 的 `entityInside` 是被 `Entity.move()` 调用的
+（`Entity.java:716` → `checkInsideBlocks()` → `entityInside`），
+而 `move()` 又处在 `ServerGamePacketListenerImpl.handleMovePlayer` 的调用栈里 ——
+那是处理客户端移动包的地方。它在 `move()` **返回之后**还会做一次位置纠偏：
+
+```java
+this.player.move(MoverType.PLAYER, ...);   // ← 传送在这里发生，人已经到对面了
+d6 = d0 - this.player.getX();              // d0 是客户端上报的旧坐标
+d10 = d6*d6 + d7*d7 + d8*d8;               // 位移差巨大 → 判定 "moved wrongly"
+...
+this.teleport(d3, d4, d5, ...);            // d3/d4/d5 是传送前的坐标 → 把人拉回来
+```
+
+于是传送在同一个 tick 内被原地撤销，而 `consumeUse` 已经执行了：
+**次数扣了，人没走**。多走几次次数就耗光了。
+
+多人比单人更容易撞上这条路径，因为客户端移动包更密集。
+
+v1.09 的修法：
+
+1. `entityInside` 只做判定和登记，真正的传送排到 `ServerTickEvent.Post` 执行。
+   那个事件在 `tickServer` 尾部触发，`tickChildren`（含玩家移动包处理）早已返回，
+   再没有任何东西会把玩家拉回去。
+2. 新加的 `PortalTeleports` 队列按实体 UUID 去重 —— 一座门有 6 个方块，
+   同一次移动检测会让 6 个方块实体各调一次 `entityInside`，不去重就会排 6 次队。
+3. 扣次数改到传送真正完成之后，并且额外检查实体坐标是否真的落在目标点；
+   没落过去就**不扣次数**，同时回滚冷却时间戳，不让玩家白等 5 秒。
+
 ---
 
 ## 2. 构建
@@ -283,7 +326,7 @@ othersLeft   : { 玩家UUID -> 剩余 }  ← 这里归零只影响那个人自�
 1. `File → Open` 选择本目录（`enderportal`），以 Gradle 项目导入。
 2. 等待依赖下载完成（首次会从 `maven.neoforged.net` 拉取 NeoForge）。
 3. 右侧 Gradle 面板 → `Tasks → neoforge runs → runClient` 启动开发客户端。
-4. `Tasks → build → build` 生成 `build/libs/enderportal-1.08.jar`，丢进 `mods/` 即可。
+4. `Tasks → build → build` 生成 `build/libs/enderportal-1.09.jar`，丢进 `mods/` 即可。
 
 ### 方式 B：命令行（Gradle）
 
@@ -299,7 +342,7 @@ Gradle 在某些环境里起不来（`native-platform.dll` 加载失败）时，
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\compile.ps1   # 调 JBR 的 javac 直接编译 -> build\classes
-python tools\package.py                                      # 把 class + 资源打成 jar -> build\libs\enderportal-1.08.jar
+python tools\package.py                                      # 把 class + 资源打成 jar -> build\libs\enderportal-1.09.jar
 ```
 
 > `compile.ps1` 必须带 UTF-8 BOM 保存，否则 Windows PowerShell 5.1 会按 GBK 解析中文注释而报语法错。
@@ -309,9 +352,9 @@ python tools\package.py                                      # 把 class + 资�
 `tools\package.py` 会把 `neoforge.mods.toml` / `pack.mcmeta` 里的 `${...}` 用 `gradle.properties`
 展开，并固定 zip 时间戳，所以同样的输入永远得到同样的 jar（可复现）。
 
-产物：`build/libs/enderportal-1.08.jar`（装到 NeoForge 21.1.x 的 `mods` 目录）。
+产物：`build/libs/enderportal-1.09.jar`（装到 NeoForge 21.1.x 的 `mods` 目录）。
 
-> **本工程已经预置了一个编译好的成品**：`build/libs/enderportal-1.08.jar`
+> **本工程已经预置了一个编译好的成品**：`build/libs/enderportal-1.09.jar`
 > （36 个条目，class 全部是 Java 21 字节码，已用 `javac --release 21` 对真实
 > NeoForge 21.1.72 类路径编译通过，zip 完整性和 class 哈希都已核对）。
 > 重新构建会覆盖它。放到 `.minecraft/mods/` 里、启动 NeoForge 21.1.x 即可加载。
@@ -379,7 +422,7 @@ ModDevGradle 是 NeoForge 官方现在主推的构建插件，插件本体发布
 2. 把 `tools/build.gradle.moddev` 复制成根目录的 `build.gradle`
 3. 重新同步 / `.\gradlew build`
 
-两种构建脚本的产物完全一样（`build/libs/enderportal-1.08.jar`），代码不用改一行。
+两种构建脚本的产物完全一样（`build/libs/enderportal-1.09.jar`），代码不用改一行。
 
 ### 其他常见报错
 
@@ -442,10 +485,10 @@ src/main/java/com/example/enderportal/
 │   ├── AbstractPortalStoneItem.java  两件传送石的公共逻辑：长按引导、冷却、扣次数、物品说明
 │   ├── PortalStoneItem.java      末影传送石：另一端开在远处另一个群系
 │   └── DungeonPortalStoneItem.java   地牢传送石：另一端开在附近的地牢里
-├── block/RemotePortalBlock.java  传送门方块：entityInside 传送、onRemove 破坏即失效、
+├── block/RemotePortalBlock.java  传送门方块：entityInside 登记传送、onRemove 破坏即失效、
 │                                 getTicker 每秒结构自检、客户端粒子
 ├── block/RemotePortalBlockEntity.java
-│                                 保存两端原点 + 朝向 + 各人剩余次数；穿门时传送到对面高台
+│                                 保存两端原点 + 朝向 + 各人剩余次数；executeTeleport 把实体送到对面高台
 ├── client/                       仅客户端（@EventBusSubscriber(Dist.CLIENT)）
 │   ├── ClientSetup.java          注册 HUD 图层
 │   └── ChannelHud.java           引导进度条
@@ -453,7 +496,8 @@ src/main/java/com/example/enderportal/
     ├── PortalManager.java        视线瞄准、落地搜索、局部坐标系、群系搜索、结构搭建/拆除、次数结算
     ├── DungeonFinder.java        翻已加载区块找地牢（刷怪笼 + 圆石地板）
     ├── PortalRegistry.java       SavedData：记录每个玩家上一对门，用于"新门顶掉旧门"
-    └── PortalCooldowns.java      1 秒穿门防抖
+    ├── PortalTeleports.java      tick 末尾执行传送的队列（v1.09，避开 handleMovePlayer 的位置纠偏）
+    └── PortalCooldowns.java      穿门防抖（默认 5 秒，可配置）
 ```
 
 关键实现点：
@@ -469,6 +513,10 @@ src/main/java/com/example/enderportal/
 - **四方向结构**：所有方块坐标都从「局部原点 + 朝向」换算（`PortalManager.localPos`），
   局部 +Z 永远是门外（台阶侧），所以玩家朝哪边看，台阶就朝哪边铺。
   楼梯的 `StairBlock.FACING` 指向门（局部 -Z），保证逐级往上走。
+- **传送要挪出 `move()` 的调用栈**（v1.09）：`entityInside` 是在 `Entity.move()` 内部触发的，
+  而 `move()` 又处在 `handleMovePlayer` 里 —— 那个方法返回后会用客户端上报的旧坐标做位置纠偏，
+  把刚传送走的人拉回来。所以 `entityInside` 只登记，`PortalTeleports` 在
+  `ServerTickEvent.Post` 统一执行，扣次数也挪到传送确认成功之后。
 - **开门位置来自鼠标**（v1.03）：`PortalManager.aimTarget` 从眼睛位置沿视线方向做
   `Level#clip`（`ClipContext.Block.OUTLINE`，最远 `aimDistance` 格）拿到瞄准的方块；
   打空（对着天空）才退回"玩家正前方 6 格"的老逻辑。
@@ -539,11 +587,11 @@ src/main/java/com/example/enderportal/
 
 ## 7. 已知情况（重要）
 
-- **v1.08 的代码已用 `javac --release 21` 对真实的 NeoForge 21.1.72 类路径编译通过**
-  （13 个源文件 → 20 个 class，`-Xlint:all` 无警告），jar 也已按同一份 class 打包。
+- **v1.09 的代码已用 `javac --release 21` 对真实的 NeoForge 21.1.72 类路径编译通过**
+  （14 个源文件 → 27 个 class，`-Xlint:all` 无警告），jar 也已按同一份 class 打包。
   但**没有进游戏实测**（沙箱里 Gradle 无法启动，也起不了客户端），
   所以"瞄准点吸附到地面"的实际手感、结构生成位置、地牢定位的命中率、进度条位置、
-  粒子/音效这类体感效果，请以你本地实际游玩为准。
+  多人同时穿门的实际表现、粒子/音效这类体感效果，请以你本地实际游玩为准。
 - 地牢搜索只扫**已加载区块**，所以：
   - 在地下挖矿、周围区块都加载着的时候最容易找到；
   - 如果提示"附近没有找到地牢"，往别处走走（让新区块加载）再试，

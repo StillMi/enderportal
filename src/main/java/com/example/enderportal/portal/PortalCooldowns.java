@@ -79,6 +79,19 @@ public final class PortalCooldowns {
     }
 
     /**
+     * 撤销一次 {@link #tryPass} 写入的时间戳。
+     *
+     * <p>用于"已经放行、但传送最终没发生"的情况（排队后门失效、实体被别处传走等）。
+     * 不撤销的话玩家会白白等满一个冷却周期，却什么也没发生。</p>
+     */
+    public static void releasePass(Entity entity) {
+        Stamps stamps = STAMPS.get(entity.getUUID());
+        if (stamps != null) {
+            stamps.pass = Long.MIN_VALUE;
+        }
+    }
+
+    /**
      * 提示节流：同一实体 {@link #HINT_TICKS} tick 内只提示一次。
      *
      * @return {@code true} 表示这次应该提示
