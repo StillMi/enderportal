@@ -20,7 +20,7 @@
   "message.enderportal.created": "已开启通往 %s, %s, %s 的传送门，每人可往返 %s 次。",
   "message.enderportal.dungeon_created": "已开启通往地牢的传送门，每人可往返 %s 次。",
   "message.enderportal.previous_closed": "上一座传送门已经消散了。",
-  "message.enderportal.teleport_delay": "传送冷却中…… %s 秒",
+  "message.enderportal.teleport_delay": "传送门还在冷却…… %s 秒",
   "message.enderportal.remaining": "你还能用这座门传送 %s 次",
   "message.enderportal.expired": "传送门已经消散了。",
   "message.enderportal.player_exhausted": "你在这座门的传送次数已经用完了。",

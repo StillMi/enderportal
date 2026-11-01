@@ -10,7 +10,6 @@ public final class Config {
 
     public static final ModConfigSpec.IntValue CHANNEL_SECONDS;
     public static final ModConfigSpec.IntValue COOLDOWN_SECONDS;
-    public static final ModConfigSpec.IntValue TELEPORT_DELAY_SECONDS;
     public static final ModConfigSpec.IntValue ROUND_TRIPS;
     public static final ModConfigSpec.IntValue AIM_DISTANCE;
     public static final ModConfigSpec.IntValue DUNGEON_RADIUS_CHUNKS;
@@ -34,11 +33,6 @@ public final class Config {
         COOLDOWN_SECONDS = builder
                 .comment("使用传送石后的冷却时间（秒）。")
                 .defineInRange("cooldownSeconds", 60, 0, 3600);
-
-        TELEPORT_DELAY_SECONDS = builder
-                .comment("同一个人/实体传送完之后，要隔多少秒才能再次被传送门传送。",
-                        "用来避免站在门口被来回反复传送。")
-                .defineInRange("teleportDelaySeconds", 5, 0, 60);
 
         ROUND_TRIPS = builder
                 .comment("每个玩家可以往返几次。次数按人单独计算：",

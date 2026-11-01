@@ -1,10 +1,21 @@
-# 末影传送石 (Ender Portal Stone) v1.12
+# 末影传送石 (Ender Portal Stone) v1.13
 
 一个 Minecraft **1.21.1 / NeoForge 21.1.x** 小模组：用 8 块黑曜石 + 1 颗末影珍珠合成一颗"石头"，
 **长按右键引导 4 秒**（屏幕下方有进度条）后，在**你鼠标瞄准的位置**与**另一个生物群系**之间
 打开一对相通的「台阶 + 高台 + 传送门」，**每人**往返 2 次后自动失效，每次使用有 1 分钟冷却。
 一块传送石最多只能开门 **3 次**，用完即毁；每次新开门，上一座还没失效的门会自动消散。
 
+> **v1.13 变更**（门面动画 + 传送延迟对齐原版下界门）：
+>
+> 1. **门面直接用原版下界门贴图** —— 模型引用 `minecraft:block/nether_portal`，
+>    动画等于原版（同一张 16×512 / 32 帧图、同一份 `.mcmeta`、同一个节奏）。
+>    几何仍是厚度 4/16 的薄片 + 双面，渲染类型 `translucent`（和原版 `NETHER_PORTAL` 一致）。
+> 2. **传送前有蓄力延迟，数值照抄原版** —— 生存 80 tick（4 秒）、创造 1 tick、
+>    非玩家 0（立即）；离开门后每 tick 衰减 4。直接读原版游戏规则
+>    `playersNetherPortalDefaultDelay` / `playersNetherPortalCreativeDelay`，没另加配置项。
+> 3. **传送后冷却也改成原版数值** —— 玩家 10 tick、非玩家 300 tick；
+>    原来的 `teleportDelaySeconds` 配置项删除。
+>
 > **v1.12 变更**（游戏内填坐标，每块石头一个地点）：
 >
 > 1. **手持末影传送石潜行 + 右键** → 弹出坐标输入界面，填 X / Y / Z。
@@ -385,7 +396,7 @@ v1.09 的修法：
 1. `File → Open` 选择本目录（`enderportal`），以 Gradle 项目导入。
 2. 等待依赖下载完成（首次会从 `maven.neoforged.net` 拉取 NeoForge）。
 3. 右侧 Gradle 面板 → `Tasks → neoforge runs → runClient` 启动开发客户端。
-4. `Tasks → build → build` 生成 `build/libs/enderportal-1.12.jar`，丢进 `mods/` 即可。
+4. `Tasks → build → build` 生成 `build/libs/enderportal-1.13.jar`，丢进 `mods/` 即可。
 
 ### 方式 B：命令行（Gradle）
 
@@ -401,7 +412,7 @@ Gradle 在某些环境里起不来（`native-platform.dll` 加载失败）时，
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\compile.ps1   # 调 JBR 的 javac 直接编译 -> build\classes
-python tools\package.py                                      # 把 class + 资源打成 jar -> build\libs\enderportal-1.12.jar
+python tools\package.py                                      # 把 class + 资源打成 jar -> build\libs\enderportal-1.13.jar
 ```
 
 > `compile.ps1` 必须带 UTF-8 BOM 保存，否则 Windows PowerShell 5.1 会按 GBK 解析中文注释而报语法错。
@@ -411,9 +422,9 @@ python tools\package.py                                      # 把 class + 资�
 `tools\package.py` 会把 `neoforge.mods.toml` / `pack.mcmeta` 里的 `${...}` 用 `gradle.properties`
 展开，并固定 zip 时间戳，所以同样的输入永远得到同样的 jar（可复现）。
 
-产物：`build/libs/enderportal-1.12.jar`（装到 NeoForge 21.1.x 的 `mods` 目录）。
+产物：`build/libs/enderportal-1.13.jar`（装到 NeoForge 21.1.x 的 `mods` 目录）。
 
-> **本工程已经预置了一个编译好的成品**：`build/libs/enderportal-1.12.jar`
+> **本工程已经预置了一个编译好的成品**：`build/libs/enderportal-1.13.jar`
 > （36 个条目，class 全部是 Java 21 字节码，已用 `javac --release 21` 对真实
 > NeoForge 21.1.72 类路径编译通过，zip 完整性和 class 哈希都已核对）。
 > 重新构建会覆盖它。放到 `.minecraft/mods/` 里、启动 NeoForge 21.1.x 即可加载。
@@ -481,7 +492,7 @@ ModDevGradle 是 NeoForge 官方现在主推的构建插件，插件本体发布
 2. 把 `tools/build.gradle.moddev` 复制成根目录的 `build.gradle`
 3. 重新同步 / `.\gradlew build`
 
-两种构建脚本的产物完全一样（`build/libs/enderportal-1.12.jar`），代码不用改一行。
+两种构建脚本的产物完全一样（`build/libs/enderportal-1.13.jar`），代码不用改一行。
 
 ### 其他常见报错
 
@@ -504,7 +515,6 @@ ModDevGradle 是 NeoForge 官方现在主推的构建插件，插件本体发布
     # 使用传送石后的冷却时间（秒）
     cooldownSeconds = 60
     # 同一个人/实体传送完之后，要隔多少秒才能再次被传送门传送
-    teleportDelaySeconds = 5
     # 每个玩家可以往返几次（按人单独计算）
     roundTrips = 2
     # 门开在视线瞄准的位置，这是瞄准的最大距离（格）
@@ -525,8 +535,9 @@ ModDevGradle 是 NeoForge 官方现在主推的构建插件，插件本体发布
 想改成"只能往返一次"就把 `roundTrips` 设成 1（**每个人**都只能往返一次）；
 想缩短引导就把 `channelSeconds` 改小
 （客户端进度条会自动跟着变，因为进度是按 `getUseDuration` 算的）。
-`teleportDelaySeconds` 控制"传送完多久才能再被传送"，默认 5 秒，
-设成 0 就退回 v1.06 的 1 秒防抖行为。
+传送前要"在门里站够时间"、传送后还有一小段冷却，这两个时长**都跟原版下界门一致**，
+没有独立配置项：蓄力时间读游戏规则 `playersNetherPortalDefaultDelay`（默认 80 tick = 4 秒）
+和 `playersNetherPortalCreativeDelay`（默认 1 tick），冷却则是玩家 10 tick / 非玩家 300 tick。
 `aimDistance` 调大就能把门开得更远（最大 64 格，即原版区块渲染距离内）。
 `dungeonRadiusChunks` 调大能扩大地牢搜索范围（默认 20 区块 = 320 格，最大 48 区块），
 但只有**已加载**的区块会被扫到，所以实际范围还受视野/模拟距离限制。
@@ -574,6 +585,7 @@ src/main/java/com/example/enderportal/
     ├── DungeonFinder.java        翻已加载区块找地牢（刷怪笼 + 圆石地板）
     ├── PortalRegistry.java       SavedData：记录每个玩家上一对门，用于"新门顶掉旧门"
     ├── PortalTeleports.java      tick 末尾执行传送的队列（v1.09，避开 handleMovePlayer 的位置纠偏）
+    ├── PortalTimers.java         传送前的蓄力计时，数值对齐原版下界门（v1.13）
     └── PortalCooldowns.java      穿门防抖（默认 5 秒，可配置）
 ```
 
@@ -622,7 +634,7 @@ src/main/java/com/example/enderportal/
 - **数据持久化**：每个传送门方块各存一份
   `{自己原点, 自己朝向, 对面原点, 对面朝向, 创造者, 配额, 各人剩余次数}`，区块卸载重载后依旧可用。
 - **防重复触发**：落点在门内高台上、面朝台阶，另外 `PortalCooldowns` 再做 5 秒冷却
-  （`teleportDelaySeconds`，按实体各自计时）。
+  （按原版下界门的规则：玩家 10 tick、非玩家 300 tick，各自计时）。
 - **3 次开门**：直接复用原版耐久机制 —— `Item.Properties().durability(3)`，
   成功开门后 `stack.hurtAndBreak(1, level, player, consumer)`，`damage >= maxDamage` 时原版自动销毁物品。
 - **新门顶掉旧门**：`PortalRegistry`（主世界 `data/enderportal_portals.dat`）记录每个玩家
@@ -642,7 +654,7 @@ src/main/java/com/example/enderportal/
 | --- | --- |
 | 改成只生成一座门 | `PortalManager.openPortalPair` / `openDungeonPortalPair`：去掉其中一次 `placeStructure`，改为把玩家直接 `teleportTo` 到目标门 |
 | 改引导时间 | `config/enderportal-common.toml` 的 `channelSeconds`（进度条会自动跟着变） |
-| 改冷却时间 | `cooldownSeconds`（物品）/ `teleportDelaySeconds`（传送后间隔） |
+| 改冷却时间 | `cooldownSeconds`（物品冷却）/ 游戏规则 `playersNetherPortalDefaultDelay`（传送前蓄力） |
 | 改往返次数 | `roundTrips`（1 = 每人只能往返一次） |
 | 改瞄准距离 | `aimDistance`（默认 24 格，最大 64） |
 | 改找地面的耐心 | `PortalManager.GROUND_SEARCH_DOWN`（往下找多少格）、`MAX_GROUND_CANDIDATES`（同列试几层）、`MAX_ANCHOR_SHIFT`（最多挪几格） |
@@ -664,8 +676,8 @@ src/main/java/com/example/enderportal/
 
 ## 7. 已知情况（重要）
 
-- **v1.12 的代码已用 `javac --release 21` 对真实的 NeoForge 21.1.72 类路径编译通过**
-  （17 个源文件 → 31 个 class，`-Xlint:all` 无警告），jar 也已按同一份 class 打包。
+- **v1.13 的代码已用 `javac --release 21` 对真实的 NeoForge 21.1.72 类路径编译通过**
+  （18 个源文件 → 33 个 class，`-Xlint:all` 无警告），jar 也已按同一份 class 打包。
   但**没有进游戏实测**（沙箱里 Gradle 无法启动，也起不了客户端），
   所以"瞄准点吸附到地面"的实际手感、结构生成位置、地牢定位的命中率、进度条位置、
   多人同时穿门的实际表现、粒子/音效这类体感效果，请以你本地实际游玩为准。

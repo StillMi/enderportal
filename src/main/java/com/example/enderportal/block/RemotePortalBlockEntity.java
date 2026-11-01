@@ -4,6 +4,7 @@ import com.example.enderportal.EnderPortal;
 import com.example.enderportal.portal.PortalCooldowns;
 import com.example.enderportal.portal.PortalManager;
 import com.example.enderportal.portal.PortalTeleports;
+import com.example.enderportal.portal.PortalTimers;
 import com.mojang.logging.LogUtils;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
@@ -205,10 +206,16 @@ public class RemotePortalBlockEntity extends BlockEntity {
     /**
      * 实体踩进传送门方块时调用。
      *
-     * <p><b>这里只做判定和登记，不真的传送。</b>这个方法是在 {@link Entity#move} 内部
-     * 被调用的，而 {@code move()} 又处在 {@code handleMovePlayer} 的调用栈里 ——
-     * 那个方法在 {@code move()} 返回后会用客户端上报的旧坐标做一次"位置纠偏"，
-     * 把刚传送走的玩家又拉回来，次数却已经扣掉了。详细说明见 {@link PortalTeleports}。</p>
+     * <p><b>这里既不传送、也不排队，只登记"它想从这座门走"。</b>两个原因：</p>
+     *
+     * <ol>
+     *   <li>这个方法是在 {@link Entity#move} 内部被调用的，而 {@code move()} 又处在
+     *       {@code handleMovePlayer} 的调用栈里 —— 那个方法在 {@code move()} 返回后会用
+     *       客户端上报的旧坐标做一次"位置纠偏"，把刚传送走的玩家又拉回来，
+     *       次数却已经扣掉了。所以真正的传送要挪到 tick 末尾，见 {@link PortalTeleports}。</li>
+     *   <li>原版下界门进门前要"蓄力"若干 tick（生存 80 tick = 4 秒），
+     *       计时由 {@link PortalTimers} 负责，这里只负责把它登记进去。</li>
+     * </ol>
      */
     public void onEntityInside(ServerLevel level, Entity entity) {
         if (!configured) {
@@ -216,10 +223,6 @@ public class RemotePortalBlockEntity extends BlockEntity {
         }
         // 骑乘状态不传送，免得把坐骑和乘客拆开
         if (entity.isPassenger() || entity.isVehicle()) {
-            return;
-        }
-        // 一座门有 6 个方块，同一次移动检测会把 6 个方块实体各调一遍；只排一次队
-        if (PortalTeleports.isQueued(entity)) {
             return;
         }
 
@@ -230,52 +233,47 @@ public class RemotePortalBlockEntity extends BlockEntity {
                 player.displayClientMessage(Component.translatable("message.enderportal.player_exhausted")
                         .withStyle(ChatFormatting.GRAY), true);
             }
+            PortalTimers.forget(entity);
             return;
         }
 
-        // 传送后要隔几秒才能再被传送，避免在门口反复弹。
-        // 冷却时间戳在这里就写入 —— 入队即视为"这次传送已经发生"，
-        // 否则同一次 checkInsideBlocks 的后续 tick 会立刻又排一次队
-        if (!PortalCooldowns.tryPass(entity)) {
-            if (entity instanceof ServerPlayer player && PortalCooldowns.tryHint(entity)) {
-                int seconds = (PortalCooldowns.remainingTicks(entity) + 19) / 20;
-                if (seconds > 0) {
-                    player.displayClientMessage(Component.translatable(
-                            "message.enderportal.teleport_delay", seconds)
-                            .withStyle(ChatFormatting.GRAY), true);
-                }
-            }
+        // 刚传送完还有一小段冷却（原版玩家 10 tick）：冷却期间不蓄力，
+        // 否则站在门口会被立刻再送回去
+        if (PortalCooldowns.isOnCooldown(entity)) {
+            PortalTimers.forget(entity);
             return;
         }
 
-        PortalTeleports.enqueue(this, level, entity);
+        // 登记蓄力。够 tick 之后由 PortalTimers 推进来的传送会走 PortalTeleports
+        PortalTimers.enter(this, entity);
     }
 
     /**
      * 真正执行传送。由 {@link PortalTeleports} 在 tick 末尾调用，
      * 此时已经脱离 {@code handleMovePlayer} 的调用栈。
      *
-     * <p>冷却时间戳在入队时就已经写好了（{@code tryPass} 在 {@code onEntityInside} 里调用），
-     * 所以这里不再碰冷却表，免得"排了队又被判冷却"把玩家静默丢下。</p>
+     * <p>蓄力期间不设冷却：冷却要等传送真正成功之后才记（{@link PortalCooldowns#markPassed}），
+     * 否则"排了队又没送成"会让玩家白等一个冷却周期。时长按原版下界门给
+     * （玩家 10 tick、非玩家 300 tick）。</p>
      */
     public void executeTeleport(ServerLevel level, Entity entity) {
         // isRemoved()：排队之后这座门可能已经被拆了（拆门时先 setRemoved 再清方块），
         // 这时 configured 还可能是 true（拆门走的是另一份方块实体），
         // 不加这道检查就会把人送到一座已经不存在的门上
         if (!configured || isRemoved() || entity.isRemoved() || !entity.isAlive()) {
-            PortalCooldowns.releasePass(entity);
+            PortalTimers.reset(entity);
             return;
         }
         // 排队后实体可能已经被别处传走了（比如同一 tick 里进了另一座门），
         // 那就别把它再从新位置拽过来
         if (entity.level() != level) {
-            PortalCooldowns.releasePass(entity);
+            PortalTimers.reset(entity);
             return;
         }
         // 排队之后可能被别的门先传走了、或者次数刚被用完，这里再确认一次
         UUID actor = actorOf(entity);
         if (leftFor(actor) <= 0) {
-            PortalCooldowns.releasePass(entity);
+            PortalTimers.reset(entity);
             return;
         }
 
@@ -307,9 +305,13 @@ public class RemotePortalBlockEntity extends BlockEntity {
         if (entity.position().distanceToSqr(tx, ty, tz) > 4.0D) {
             LOGGER.warn("[enderportal] teleport to {} did not take effect for {}, not consuming a use",
                     BlockPos.containing(tx, ty, tz), entity.getName().getString());
-            PortalCooldowns.releasePass(entity);
+            PortalTimers.reset(entity);
             return;
         }
+
+        // 传送真的成功了：清掉蓄力，并按原版下界门的时长开始冷却
+        PortalTimers.reset(entity);
+        PortalCooldowns.markPassed(entity);
 
         level.playSound(null, BlockPos.containing(tx, ty, tz), SoundEvents.PORTAL_TRAVEL,
                 SoundSource.BLOCKS, 0.7F, 1.0F);

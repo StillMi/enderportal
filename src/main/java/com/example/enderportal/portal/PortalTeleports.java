@@ -53,11 +53,6 @@ public final class PortalTeleports {
     private PortalTeleports() {
     }
 
-    /** 这个实体本轮是不是已经排上队了（同一 tick 里 6 个门方块只排一次）。 */
-    public static boolean isQueued(Entity entity) {
-        return QUEUED.contains(entity.getUUID());
-    }
-
     /** 登记一次传送；同一实体重复登记会被忽略。 */
     public static void enqueue(RemotePortalBlockEntity portal, ServerLevel level, Entity entity) {
         if (!QUEUED.add(entity.getUUID())) {
@@ -73,6 +68,10 @@ public final class PortalTeleports {
      * 也不会因为遍历时修改列表而出问题。</p>
      */
     public static void onServerTickPost(ServerTickEvent.Post event) {
+        // 先推进"站在门里蓄力"的计时，再排干队列 —— 顺序不能反：
+        // 这一 tick 刚好蓄满的实体要能在同一 tick 里被送走，手感才和下界门一致
+        PortalTimers.tickAll(event.getServer());
+
         if (QUEUE.isEmpty()) {
             return;
         }
