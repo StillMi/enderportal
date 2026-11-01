@@ -35,32 +35,10 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * 传送门的生成 / 传送 / 失效逻辑。
- *
- * <p>结构是「高台 + 上行台阶 + 门」。所有坐标都用一个局部坐标系描述：
- * 局部原点 {@code origin} 是门底梁的左下角方块，局部 +Z 指向门外（玩家进出、上下台阶的一侧），
- * 局部 +X 与 +Z 垂直。因此同一套代码可以朝四个方向生成。</p>
- *
- * <pre>
- *   局部 z=0（门面）              z=1        z=2   z=3   z=4
- *   y=4   # # # #                                   ← 顶梁
- *   y=3   # P P #                                     P = 门面
- *   y=2   # P P #               高台面（玩家站这里）
- *   y=1   # P P #               高台
- *   y=0   # # # #  # # # #      底梁 + 高台面
- *   y=-1                        ·  ·  ▲  ·  ·          ▲ = 台阶，越靠外越低
- *   y=-2                        ·  ·  █  ▲  ·
- *   y=-3                        ·  ·  █  █  ▲
- *
- *   # 黑曜石   P 传送门方块   █ 支撑填充   ▲ 磨制黑石台阶
- * </pre>
- *
- * <p>失效规则：次数用尽、或任意一个组成方块被破坏，两端整座门（含高台和台阶）
- * 都会被完全清除，不留遗迹。</p>
- *
- * <p>近端的门开在玩家<b>视线瞄准的位置</b>：先做一次方块射线检测取瞄准的方块，
- * 再在那一列上下找最近的地面；地形放不下（悬崖边、水面、太陡）就挪到最近的平地，
- * 保证门不会悬空。</p>
+ * 传送门生成、传送和失效管理。
+ * 局部原点为门底梁左端，+X 沿门宽、+Z 朝门外。
+ * 新结构为 4x5 门框、2x3 门面，门前 +Z=1 仅一排两格宽台阶。
+ * 不铺高台、不垫支撑柱，旧门通过布局版本保留拆除兼容。
  */
 public final class PortalManager {
 
@@ -73,20 +51,18 @@ public final class PortalManager {
     /** 门内部高。 */
     public static final int PORTAL_HEIGHT = 3;
 
-    /** 高台面（玩家站立面）比地面高出的格数。 */
-    public static final int PLATFORM_RISE = 4;
-    /** 台阶数量，正好把高台拆成一级一格。 */
-    public static final int STEP_COUNT = PLATFORM_RISE - 1;
-    /** 高台进深（局部 z = 0..1）。 */
-    public static final int PLATFORM_DEPTH = 2;
+    /** 门槛顶面比天然地面高一格；不再生成高台。 */
+    public static final int PLATFORM_RISE = 1;
+    /** 门前台阶只有一节（两格宽）。 */
+    public static final int STEP_COUNT = 1;
+    /** 门框自身进深；前方紧接一节台阶。 */
+    public static final int PLATFORM_DEPTH = 1;
 
-    /** 门底梁相对地面的高度：比高台面低一格。 */
+    /** 门底梁放在天然地面上。 */
     private static final int BASE_OFFSET = PLATFORM_RISE - 1;
-    /** 支撑填充的底部相对底梁的偏移，拆除时用同一份常量，保证能拆干净。 */
-    private static final int FILL_BOTTOM_OFFSET = -BASE_OFFSET;
 
     /** 生成时玩家与门之间的距离，玩家正好站在最外侧台阶前（只在没瞄准方块时使用）。 */
-    private static final int APPROACH_DISTANCE = STEP_COUNT + 3;
+    private static final int APPROACH_DISTANCE = 3;
 
     /** 瞄准点附近最多挪几格去找一块能站人的平地（切比雪夫距离）。 */
     private static final int MAX_ANCHOR_SHIFT = 4;
@@ -100,14 +76,11 @@ public final class PortalManager {
      * 结构占地范围内地面最大落差，超过就说明地形太陡，换个位置。
      *
      * <p>这个值不能太小：真实地形（山坡、树根、台阶边）本来就起伏，
-     * 卡太死会让"站不住脚"刷屏。高台本来就会从最低处垫黑曜石柱，
-     * 所以只要落差在可控范围内就让它建。</p>
+     * 卡太死会让"站不住脚"刷屏。新版不再垫支撑柱，因此六个实际支撑列必须处在同一高度。</p>
      */
-    private static final int MAX_FOOTPRINT_SPREAD = 6;
+    private static final int MAX_FOOTPRINT_SPREAD = 0;
     /** 同一列上最多试几层地面（瞄准树冠时往下多试几层就能落回林地）。 */
     private static final int MAX_GROUND_CANDIDATES = 6;
-    /** 占地范围内允许有几列找不到天然地面（树、水、坑），用锚点高度补齐。 */
-    private static final int MAX_MISSING_COLUMNS = 4;
     /** 地牢那一端：门框嵌进离刷怪笼多远的墙（地牢房间半径 2~3 格）。 */
     private static final int DUNGEON_WALL_MIN = 2;
     private static final int DUNGEON_WALL_MAX = 5;
@@ -155,13 +128,15 @@ public final class PortalManager {
     /** 局部连续坐标 → 世界 X（用于算落点）。 */
     public static double localX(BlockPos origin, Direction front, double lx, double lz) {
         Direction lateral = front.getCounterClockWise();
-        return origin.getX() + lateral.getStepX() * lx + front.getStepX() * lz;
+        return origin.getX() + 0.5D + lateral.getStepX() * (lx - 0.5D)
+                + front.getStepX() * (lz - 0.5D);
     }
 
     /** 局部连续坐标 → 世界 Z。 */
     public static double localZ(BlockPos origin, Direction front, double lx, double lz) {
         Direction lateral = front.getCounterClockWise();
-        return origin.getZ() + lateral.getStepZ() * lx + front.getStepZ() * lz;
+        return origin.getZ() + 0.5D + lateral.getStepZ() * (lx - 0.5D)
+                + front.getStepZ() * (lz - 0.5D);
     }
 
     /* ------------------------------------------------------------------ */
@@ -678,7 +653,7 @@ public final class PortalManager {
                     }
                     int x = anchor.getX() + dx;
                     int z = anchor.getZ() + dz;
-                    // 让瞄准的这一列落在高台中央（局部 x=2, z=1）
+                    // 让瞄准列落在单级台阶入口中央（局部 x=2, z=1）
                     BlockPos probe = new BlockPos(
                             x - lateral.getStepX() * 2 - front.getStepX(), 0,
                             z - lateral.getStepZ() * 2 - front.getStepZ());
@@ -695,7 +670,7 @@ public final class PortalManager {
                         if (bounds.tooSteep()) {
                             continue; // 这一层地形太陡，往下试
                         }
-                        // 从占地范围内最低的一列开始垫，整座高台都踩在地上
+                        // 六个支撑列等高，门底和单级台阶直接放在地面上
                         BlockPos origin = new BlockPos(probe.getX(), bounds.min() + BASE_OFFSET, probe.getZ());
                         if (hasRoom(level, origin, front)) {
                             return origin;
@@ -942,14 +917,8 @@ public final class PortalManager {
     /* ------------------------------------------------------------------ */
 
     /**
-     * 结构占地范围内所有列的地面高度。
-     *
-     * <p>只检查<b>真正会放方块</b>的那些列（高台 + 台阶，4×5），四周留白不再要求
-     * 必须有地面 —— 以前连留白一起要求，一棵树、一滩水就能让整次开门失败。</p>
-     *
-     * <p>个别列找不到天然地面（树干、水面、坑）时，用锚点列的高度补齐，
-     * 但只要缺得太多（超过 {@link #MAX_MISSING_COLUMNS}）就认为地形不适合，返回
-     * {@code null}。高台本身会从最低处垫黑曜石柱，所以补齐是安全的。</p>
+     * 检查门底四列和单级台阶两列的天然支撑。
+     * 不再铺高台或填支撑柱，因此这六列必须找到同高度的坚实地面。
      */
     private static int[][] footprintSurfaces(ServerLevel level, BlockPos origin, Direction front, int referenceY) {
         return footprintSurfaces(level, origin, front, referenceY, null);
@@ -957,11 +926,12 @@ public final class PortalManager {
 
     private static int[][] footprintSurfaces(ServerLevel level, BlockPos origin, Direction front, int referenceY,
                                              ColumnCache cache) {
-        int columns = PLATFORM_DEPTH + STEP_COUNT; // 高台 + 台阶
-        int[][] surfaces = new int[FRAME_WIDTH][columns];
-        int missing = 0;
+        // Only six support columns: four under the frame and two under the single step.
+        int[][] surfaces = new int[FRAME_WIDTH][];
         for (int ix = 0; ix < FRAME_WIDTH; ix++) {
-            for (int iz = 0; iz < columns; iz++) {
+            int depth = (ix == 0 || ix == FRAME_WIDTH - 1) ? 1 : 2;
+            surfaces[ix] = new int[depth];
+            for (int iz = 0; iz < depth; iz++) {
                 BlockPos pos = localPos(origin, front, ix, 0, iz);
                 Integer ground = cache == null
                         ? groundNear(level, pos.getX(), pos.getZ(), referenceY,
@@ -969,13 +939,9 @@ public final class PortalManager {
                         : cache.groundAt(pos.getX(), pos.getZ(), referenceY,
                                 FOOTPRINT_WINDOW, FOOTPRINT_WINDOW);
                 if (ground == null) {
-                    if (++missing > MAX_MISSING_COLUMNS) {
-                        return null;
-                    }
-                    surfaces[ix][iz] = referenceY;
-                } else {
-                    surfaces[ix][iz] = ground;
+                    return null;
                 }
+                surfaces[ix][iz] = ground;
             }
         }
         return surfaces;
@@ -1135,12 +1101,12 @@ public final class PortalManager {
     }
 
     /**
-     * 生成整座门：先挖空门洞与台阶上方，再摆框架、高台、台阶和门面。
+     * 生成简洁门：门框、门面和紧接门槛的一节台阶，不铺高台或支撑柱。
      *
      * <p>全程持有 {@code building} 标志：建门期间被覆盖的方块不算"玩家拆门"，
      * 否则后建的那一端会把先建的那一端拆掉（见 {@link #building}）。</p>
      *
-     * @param platform {@code true} 为完整的「台阶 + 高台 + 门」；
+     * @param platform {@code true} 为「单级台阶 + 门框 + 门面」；
      *                 {@code false} 为紧凑版（只有门框 + 门面），给地牢这种室内空间用
      */
     private static void placeStructure(ServerLevel level, BlockPos origin, Direction front,
@@ -1152,34 +1118,13 @@ public final class PortalManager {
             ensureChunks(level, origin, front);
 
             BlockState air = Blocks.AIR.defaultBlockState();
-            if (platform) {
-                // 1) 挖空：门洞 + 高台上方
-                for (int lx = 0; lx < FRAME_WIDTH; lx++) {
-                    for (int lz = 0; lz < PLATFORM_DEPTH; lz++) {
-                        for (int ly = 1; ly <= FRAME_HEIGHT; ly++) {
-                            level.setBlockAndUpdate(localPos(origin, front, lx, ly, lz), air);
-                        }
-                    }
-                }
-                // 台阶上方留出站立空间
-                for (int step = 0; step < STEP_COUNT; step++) {
-                    int lz = PLATFORM_DEPTH + step;
-                    int stepY = -1 - step;
-                    for (int lx = 1; lx <= PORTAL_WIDTH; lx++) {
-                        for (int ly = stepY + 1; ly <= stepY + 4; ly++) {
-                            level.setBlockAndUpdate(localPos(origin, front, lx, ly, lz), air);
-                        }
-                    }
-                }
-            } else {
-                // 紧凑版：地牢房间本来就是空的，只把门正前方那一列清出来，
-                // 而且绝不碰刷怪笼和箱子（那是地牢的战利品，不能拆）
-                for (int lx = 1; lx <= PORTAL_WIDTH; lx++) {
+            // Clear only the doorway and the two-wide approach. Never excavate a platform.
+            for (int lx = 1; lx <= PORTAL_WIDTH; lx++) {
+                for (int lz = 0; lz <= 1; lz++) {
                     for (int ly = 1; ly <= PORTAL_HEIGHT; ly++) {
-                        BlockPos inFront = localPos(origin, front, lx, ly, 1);
-                        BlockState state = level.getBlockState(inFront);
-                        if (!state.isAir() && level.getBlockEntity(inFront) == null) {
-                            level.setBlockAndUpdate(inFront, air);
+                        BlockPos pos = localPos(origin, front, lx, ly, lz);
+                        if (level.getBlockEntity(pos) == null) {
+                            level.setBlockAndUpdate(pos, air);
                         }
                     }
                 }
@@ -1194,6 +1139,7 @@ public final class PortalManager {
                 if (piece.state().is(EnderPortal.REMOTE_PORTAL.get())
                         && level.getBlockEntity(piece.pos()) instanceof RemotePortalBlockEntity portal) {
                     portal.configure(origin, front, partnerOrigin, partnerFront, creator, uses);
+                    portal.setCompactLayout(platform);
                 }
             }
 
@@ -1205,7 +1151,7 @@ public final class PortalManager {
     }
 
     /**
-     * 整座门要放的所有方块（含支撑填充）。
+     * 新版门所需的方块：框架、门面和可选的单级台阶。
      * 坐标只由 origin / front 决定，所以搭建和拆除共用这一份清单，保证拆得干净。
      *
      * @param platform {@code false} 时只返回门框 + 门面（紧凑版是完整版的<b>子集</b>），
@@ -1219,7 +1165,46 @@ public final class PortalManager {
         BlockState stair = Blocks.POLISHED_BLACKSTONE_STAIRS.defaultBlockState()
                 .setValue(StairBlock.FACING, front.getOpposite());
 
-        int fillBottom = origin.getY() + FILL_BOTTOM_OFFSET;
+
+        // 框架：底梁、顶梁、左右立柱
+        for (int lx = 0; lx < FRAME_WIDTH; lx++) {
+            out.add(new Piece(localPos(origin, front, lx, 0, 0), obsidian));
+            out.add(new Piece(localPos(origin, front, lx, FRAME_HEIGHT - 1, 0), obsidian));
+        }
+        for (int ly = 1; ly < FRAME_HEIGHT - 1; ly++) {
+            out.add(new Piece(localPos(origin, front, 0, ly, 0), obsidian));
+            out.add(new Piece(localPos(origin, front, FRAME_WIDTH - 1, ly, 0), obsidian));
+        }
+
+        // 门面
+        for (int lx = 1; lx <= PORTAL_WIDTH; lx++) {
+            for (int ly = 1; ly <= PORTAL_HEIGHT; ly++) {
+                out.add(new Piece(localPos(origin, front, lx, ly, 0), portalState));
+            }
+        }
+
+        if (!platform) {
+            return out;
+        }
+
+        // One stair row immediately in front of the threshold; no platform or pillars.
+        for (int lx = 1; lx <= PORTAL_WIDTH; lx++) {
+            out.add(new Piece(localPos(origin, front, lx, 0, 1), stair));
+        }
+
+        return out;
+    }
+
+    /** Pre-1.14 geometry, retained only for removing existing portals. */
+    private static List<Piece> legacyPieces(BlockPos origin, Direction front, BlockState portalState,
+                                      boolean platform) {
+        List<Piece> out = new ArrayList<>(96);
+        BlockState obsidian = Blocks.OBSIDIAN.defaultBlockState();
+        // 楼梯的高侧朝向门（局部 -Z），玩家从外侧逐级走上来
+        BlockState stair = Blocks.POLISHED_BLACKSTONE_STAIRS.defaultBlockState()
+                .setValue(StairBlock.FACING, front.getOpposite());
+
+        int fillBottom = origin.getY() + (-3);
 
         // 框架：底梁、顶梁、左右立柱
         for (int lx = 0; lx < FRAME_WIDTH; lx++) {
@@ -1244,7 +1229,7 @@ public final class PortalManager {
 
         // 高台：表面一层 + 往下垫到地面
         for (int lx = 0; lx < FRAME_WIDTH; lx++) {
-            for (int lz = 0; lz < PLATFORM_DEPTH; lz++) {
+            for (int lz = 0; lz < 2; lz++) {
                 BlockPos surfacePos = localPos(origin, front, lx, 0, lz);
                 if (lz > 0) {
                     out.add(new Piece(surfacePos, obsidian));
@@ -1256,8 +1241,8 @@ public final class PortalManager {
         }
 
         // 台阶：越靠外越低，每级一格
-        for (int step = 0; step < STEP_COUNT; step++) {
-            int lz = PLATFORM_DEPTH + step;
+        for (int step = 0; step < 3; step++) {
+            int lz = 2 + step;
             int stepY = -1 - step;
             for (int lx = 1; lx <= PORTAL_WIDTH; lx++) {
                 BlockPos stepPos = localPos(origin, front, lx, stepY, lz);
@@ -1329,8 +1314,25 @@ public final class PortalManager {
         ensureChunks(level, origin, front);
 
         BlockState air = Blocks.AIR.defaultBlockState();
-        for (Piece piece : pieces(origin, front,
-                EnderPortal.REMOTE_PORTAL.get().defaultBlockState(), true)) {
+        RemotePortalBlockEntity source = firstPortal(level, origin, front);
+        // No live identity: never expand deletion over arbitrary neighbouring builds.
+        boolean legacy = source != null && !source.hasCompactLayout();
+        // Old dungeon entrances had no platform. Do not extend demolition over their floor.
+        boolean oldPlatform = legacy && level.getBlockState(localPos(origin, front, 1, -1, 2))
+                .is(Blocks.POLISHED_BLACKSTONE_STAIRS);
+        boolean stairs = source != null && source.hasEntryStep();
+        BlockState portalState = EnderPortal.REMOTE_PORTAL.get().defaultBlockState();
+        if (legacy) {
+            for (int lx = 0; lx < FRAME_WIDTH; lx++) {
+                for (int lz = 0; lz <= 4; lz++) {
+                    BlockPos pos = localPos(origin, front, lx, 0, lz);
+                    level.getChunk(pos.getX() >> 4, pos.getZ() >> 4);
+                }
+            }
+        }
+        List<Piece> removal = legacy ? legacyPieces(origin, front, portalState, oldPlatform)
+                : pieces(origin, front, portalState, stairs);
+        for (Piece piece : removal) {
             BlockPos pos = piece.pos();
             if (skip != null && pos.equals(skip)) {
                 continue;

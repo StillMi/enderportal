@@ -1,7 +1,14 @@
-# 末影传送石 (Ender Portal Stone) v1.13
+# 末影传送石 (Ender Portal Stone) v1.14
+
+> **v1.14：简洁门框 + 一节台阶。** 新门不再生成高台、三段长阶和支撑柱；
+> 门前仅一排两格宽台阶，走一步直接进门。生成范围缩为门框四列和台阶两列，
+> 六列需要同高的天然支撑；传送落点随入口缩小，并修正四朝向连续坐标。
+> 旧门保持原貌，布局版本负责按旧尺寸拆除；地牢室内端仍保留贴地门框。
+> 原版下界门动画、蓄力延迟和每块石头绑定坐标的玩法继续保留。
+> 修复同一扇门不同门面方块反复重置蓄力的问题。
 
 一个 Minecraft **1.21.1 / NeoForge 21.1.x** 小模组：用 8 块黑曜石 + 1 颗末影珍珠合成一颗"石头"，
-**长按右键引导 4 秒**（屏幕下方有进度条）后，在**你鼠标瞄准的位置**与**另一个生物群系**之间
+**长按右键引导 4 秒**（屏幕下方有进度条）后，在**你鼠标瞄准的位置**与**这块石头绑定的坐标**之间
 打开一对相通的「台阶 + 高台 + 传送门」，**每人**往返 2 次后自动失效，每次使用有 1 分钟冷却。
 一块传送石最多只能开门 **3 次**，用完即毁；每次新开门，上一座还没失效的门会自动消散。
 
@@ -396,7 +403,7 @@ v1.09 的修法：
 1. `File → Open` 选择本目录（`enderportal`），以 Gradle 项目导入。
 2. 等待依赖下载完成（首次会从 `maven.neoforged.net` 拉取 NeoForge）。
 3. 右侧 Gradle 面板 → `Tasks → neoforge runs → runClient` 启动开发客户端。
-4. `Tasks → build → build` 生成 `build/libs/enderportal-1.13.jar`，丢进 `mods/` 即可。
+4. `Tasks → build → build` 生成 `build/libs/enderportal-1.14.jar`，丢进 `mods/` 即可。
 
 ### 方式 B：命令行（Gradle）
 
@@ -412,7 +419,7 @@ Gradle 在某些环境里起不来（`native-platform.dll` 加载失败）时，
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\compile.ps1   # 调 JBR 的 javac 直接编译 -> build\classes
-python tools\package.py                                      # 把 class + 资源打成 jar -> build\libs\enderportal-1.13.jar
+python tools\package.py                                      # 把 class + 资源打成 jar -> build\libs\enderportal-1.14.jar
 ```
 
 > `compile.ps1` 必须带 UTF-8 BOM 保存，否则 Windows PowerShell 5.1 会按 GBK 解析中文注释而报语法错。
@@ -422,9 +429,9 @@ python tools\package.py                                      # 把 class + 资�
 `tools\package.py` 会把 `neoforge.mods.toml` / `pack.mcmeta` 里的 `${...}` 用 `gradle.properties`
 展开，并固定 zip 时间戳，所以同样的输入永远得到同样的 jar（可复现）。
 
-产物：`build/libs/enderportal-1.13.jar`（装到 NeoForge 21.1.x 的 `mods` 目录）。
+产物：`build/libs/enderportal-1.14.jar`（装到 NeoForge 21.1.x 的 `mods` 目录）。
 
-> **本工程已经预置了一个编译好的成品**：`build/libs/enderportal-1.13.jar`
+> **本工程已经预置了一个编译好的成品**：`build/libs/enderportal-1.14.jar`
 > （36 个条目，class 全部是 Java 21 字节码，已用 `javac --release 21` 对真实
 > NeoForge 21.1.72 类路径编译通过，zip 完整性和 class 哈希都已核对）。
 > 重新构建会覆盖它。放到 `.minecraft/mods/` 里、启动 NeoForge 21.1.x 即可加载。
@@ -492,7 +499,7 @@ ModDevGradle 是 NeoForge 官方现在主推的构建插件，插件本体发布
 2. 把 `tools/build.gradle.moddev` 复制成根目录的 `build.gradle`
 3. 重新同步 / `.\gradlew build`
 
-两种构建脚本的产物完全一样（`build/libs/enderportal-1.13.jar`），代码不用改一行。
+两种构建脚本的产物完全一样（`build/libs/enderportal-1.14.jar`），代码不用改一行。
 
 ### 其他常见报错
 

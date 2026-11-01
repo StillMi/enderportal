@@ -91,10 +91,11 @@ public final class PortalTimers {
             CHARGES.clear();
         }
         Charge charge = CHARGES.computeIfAbsent(entity.getUUID(), key -> new Charge());
-        if (charge.portal != portal) {
+        if (!portal.isSameEntrance(charge.portal)) {
             charge.portal = portal;
             charge.portalTime = 0;
         }
+        charge.portal = portal;
         charge.level = level;
     }
 

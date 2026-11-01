@@ -66,6 +66,8 @@ public class RemotePortalBlockEntity extends BlockEntity {
     private static final Logger LOGGER = LogUtils.getLogger();
 
     private boolean configured;
+    private int layoutVersion;
+    private boolean entryStep;
     private BlockPos frameOrigin = BlockPos.ZERO;
     private Direction frameFront = Direction.SOUTH;
     private BlockPos partnerOrigin = BlockPos.ZERO;
@@ -103,6 +105,24 @@ public class RemotePortalBlockEntity extends BlockEntity {
         this.configured = true;
         this.setChanged();
     }
+
+    /** New geometry is persisted so older platforms still dismantle correctly. */
+    public void setCompactLayout(boolean entryStep) {
+        this.layoutVersion = 2;
+        this.entryStep = entryStep;
+        setChanged();
+    }
+
+    /** All six block entities of one entrance share this identity. */
+    public boolean isSameEntrance(RemotePortalBlockEntity other) {
+        return other != null && level == other.level
+                && frameOrigin.equals(other.frameOrigin) && frameFront == other.frameFront
+                && partnerOrigin.equals(other.partnerOrigin) && partnerFront == other.partnerFront
+                && creator.equals(other.creator);
+    }
+
+    public boolean hasCompactLayout() { return layoutVersion >= 2; }
+    public boolean hasEntryStep() { return entryStep; }
 
     /** 谁去用这座门，就按谁的 UUID 记账。 */
     public static UUID actorOf(Entity entity) {
@@ -277,13 +297,19 @@ public class RemotePortalBlockEntity extends BlockEntity {
             return;
         }
 
-        // 落点：对面高台的正中央，玩家站在高台面上、面朝台阶（门外）。
-        // 多人几乎同时穿门时，固定落点会让两个人落在<b>完全相同</b>的坐标上，
-        // 原版碰撞会把其中一个挤出去（运气差就挤下高台）。
-        // 这里按实体 UUID 取一个确定性的微小偏移，把落点在高台面上摊开；
-        // 高台宽 4 格、深 2 格，偏移控制在 ±0.75 / ±0.25 格内，不会踩空。
-        double spreadX = ((entity.getUUID().hashCode() & 0xFF) / 255.0D - 0.5D) * 1.5D;
-        double spreadZ = (((entity.getUUID().hashCode() >>> 8) & 0xFF) / 255.0D - 0.5D) * 0.5D;
+        // New arrivals stay over the inner half of the one-step entrance.
+        // Legacy portals retain their wider platform spread.
+        level.getChunk(partnerOrigin.getX() >> 4, partnerOrigin.getZ() >> 4);
+        boolean compactTarget = false;
+        for (BlockPos pos : PortalManager.portalBlocks(partnerOrigin, partnerFront)) {
+            if (level.getBlockEntity(pos) instanceof RemotePortalBlockEntity other) {
+                compactTarget = other.hasCompactLayout();
+                break;
+            }
+        }
+        double spreadX = ((entity.getUUID().hashCode() & 0xFF) / 255.0D - 0.5D)
+                * (compactTarget ? 0.8D : 1.5D);
+        double spreadZ = compactTarget ? 0.0D : (((entity.getUUID().hashCode() >>> 8) & 0xFF) / 255.0D - 0.5D) * 0.5D;
         double tx = PortalManager.localX(partnerOrigin, partnerFront, 2.0D + spreadX, 1.5D + spreadZ);
         double ty = partnerOrigin.getY() + 1.0D;
         double tz = PortalManager.localZ(partnerOrigin, partnerFront, 2.0D + spreadX, 1.5D + spreadZ);
@@ -339,6 +365,8 @@ public class RemotePortalBlockEntity extends BlockEntity {
     protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.saveAdditional(tag, registries);
         tag.putBoolean("Configured", configured);
+        tag.putInt("LayoutVersion", layoutVersion);
+        tag.putBoolean("EntryStep", entryStep);
         tag.putLong("FrameOrigin", frameOrigin.asLong());
         tag.putString("FrameFront", frameFront.getName());
         tag.putLong("PartnerOrigin", partnerOrigin.asLong());
@@ -361,6 +389,8 @@ public class RemotePortalBlockEntity extends BlockEntity {
     protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.loadAdditional(tag, registries);
         configured = tag.getBoolean("Configured");
+        layoutVersion = tag.getInt("LayoutVersion");
+        entryStep = tag.getBoolean("EntryStep");
         frameOrigin = BlockPos.of(tag.getLong("FrameOrigin"));
         frameFront = readDirection(tag.getString("FrameFront"));
         partnerOrigin = BlockPos.of(tag.getLong("PartnerOrigin"));
