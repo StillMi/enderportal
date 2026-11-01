@@ -10,10 +10,14 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.EntityBlock;
+import net.minecraft.world.level.block.HorizontalDirectionalBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.DirectionProperty;
+import net.minecraft.core.Direction;
 import org.slf4j.Logger;
 
 /**
@@ -21,13 +25,26 @@ import org.slf4j.Logger;
  *
  * <p>门被拆除（玩家破坏、爆炸、活塞等）时立即让整对传送门失效；
  * 另外每秒做一次结构自检，用来发现黑曜石框架被拆掉的情况。</p>
+ *
+ * <p>方块带一个 {@link #FACING} 属性（门面朝向，也就是"门外"的方向）。
+ * 门面用的是像下界门那样的<b>薄片</b>模型，薄片必须始终贴在门框平面上；
+ * 没有这个属性的话，朝东/朝西的门会看到薄片横穿门洞。</p>
  */
 public class RemotePortalBlock extends Block implements EntityBlock {
+
+    /** 门面朝向（= 门外方向）。薄片模型按它旋转。 */
+    public static final DirectionProperty FACING = HorizontalDirectionalBlock.FACING;
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
     public RemotePortalBlock(Properties properties) {
         super(properties);
+        registerDefaultState(this.stateDefinition.any().setValue(FACING, Direction.SOUTH));
+    }
+
+    @Override
+    protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+        builder.add(FACING);
     }
 
     @Override

@@ -1,7 +1,8 @@
 {
   "variants": {
-    "": {
-      "model": "enderportal:block/remote_portal"
-    }
+    "facing=north": { "model": "enderportal:block/remote_portal" },
+    "facing=south": { "model": "enderportal:block/remote_portal", "y": 180 },
+    "facing=east":  { "model": "enderportal:block/remote_portal", "y": 90 },
+    "facing=west":  { "model": "enderportal:block/remote_portal", "y": 270 }
   }
 }

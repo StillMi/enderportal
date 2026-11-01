@@ -1,10 +1,21 @@
-# 末影传送石 (Ender Portal Stone) v1.10
+# 末影传送石 (Ender Portal Stone) v1.11
 
 一个 Minecraft **1.21.1 / NeoForge 21.1.x** 小模组：用 8 块黑曜石 + 1 颗末影珍珠合成一颗"石头"，
 **长按右键引导 4 秒**（屏幕下方有进度条）后，在**你鼠标瞄准的位置**与**另一个生物群系**之间
 打开一对相通的「台阶 + 高台 + 传送门」，**每人**往返 2 次后自动失效，每次使用有 1 分钟冷却。
 一块传送石最多只能开门 **3 次**，用完即毁；每次新开门，上一座还没失效的门会自动消散。
 
+> **v1.11 变更**（末影传送石改固定坐标 + 门面换成下界门特效）：
+>
+> 1. **末影传送石改成固定坐标** —— 以前在 256~2048 格内随机找"和当前群系不同"的地方，
+>    每次通到哪儿都随机。现在目的地由 `config/enderportal-common.toml` 的
+>    `[destination]` 段决定：`targetX` / `targetY` / `targetZ`。
+>    坐标只是锚点 —— Y 当参考高度，落点由地形决定；那一带放不下就按
+>    `targetSearchRadius` 向周围找空地。删掉了不再有意义的 `minDistance` / `maxDistance`。
+> 2. **门面换成下界门那种流动特效** —— 几何从占满整格的立方体改成厚度 4/16 的薄片，
+>    贴图从 16×16 静态图改成 16×512 的 32 帧动画（配 `.mcmeta`，`interpolate` 平滑过渡）。
+>    门方块新增 `facing` 属性，四个朝向各有模型旋转，朝东西的门薄片不会横穿门洞。
+>
 > **v1.10 修复**（多人一起玩时另外四处会出事的地方）：
 >
 > 1. **建门会把旁边的玩家埋进黑曜石里** —— "太近"判定原来只看开门那个人自己，
@@ -338,7 +349,7 @@ v1.09 的修法：
 1. `File → Open` 选择本目录（`enderportal`），以 Gradle 项目导入。
 2. 等待依赖下载完成（首次会从 `maven.neoforged.net` 拉取 NeoForge）。
 3. 右侧 Gradle 面板 → `Tasks → neoforge runs → runClient` 启动开发客户端。
-4. `Tasks → build → build` 生成 `build/libs/enderportal-1.10.jar`，丢进 `mods/` 即可。
+4. `Tasks → build → build` 生成 `build/libs/enderportal-1.11.jar`，丢进 `mods/` 即可。
 
 ### 方式 B：命令行（Gradle）
 
@@ -354,7 +365,7 @@ Gradle 在某些环境里起不来（`native-platform.dll` 加载失败）时，
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\compile.ps1   # 调 JBR 的 javac 直接编译 -> build\classes
-python tools\package.py                                      # 把 class + 资源打成 jar -> build\libs\enderportal-1.10.jar
+python tools\package.py                                      # 把 class + 资源打成 jar -> build\libs\enderportal-1.11.jar
 ```
 
 > `compile.ps1` 必须带 UTF-8 BOM 保存，否则 Windows PowerShell 5.1 会按 GBK 解析中文注释而报语法错。
@@ -364,9 +375,9 @@ python tools\package.py                                      # 把 class + 资�
 `tools\package.py` 会把 `neoforge.mods.toml` / `pack.mcmeta` 里的 `${...}` 用 `gradle.properties`
 展开，并固定 zip 时间戳，所以同样的输入永远得到同样的 jar（可复现）。
 
-产物：`build/libs/enderportal-1.10.jar`（装到 NeoForge 21.1.x 的 `mods` 目录）。
+产物：`build/libs/enderportal-1.11.jar`（装到 NeoForge 21.1.x 的 `mods` 目录）。
 
-> **本工程已经预置了一个编译好的成品**：`build/libs/enderportal-1.10.jar`
+> **本工程已经预置了一个编译好的成品**：`build/libs/enderportal-1.11.jar`
 > （36 个条目，class 全部是 Java 21 字节码，已用 `javac --release 21` 对真实
 > NeoForge 21.1.72 类路径编译通过，zip 完整性和 class 哈希都已核对）。
 > 重新构建会覆盖它。放到 `.minecraft/mods/` 里、启动 NeoForge 21.1.x 即可加载。
@@ -434,7 +445,7 @@ ModDevGradle 是 NeoForge 官方现在主推的构建插件，插件本体发布
 2. 把 `tools/build.gradle.moddev` 复制成根目录的 `build.gradle`
 3. 重新同步 / `.\gradlew build`
 
-两种构建脚本的产物完全一样（`build/libs/enderportal-1.10.jar`），代码不用改一行。
+两种构建脚本的产物完全一样（`build/libs/enderportal-1.11.jar`），代码不用改一行。
 
 ### 其他常见报错
 
@@ -460,14 +471,19 @@ ModDevGradle 是 NeoForge 官方现在主推的构建插件，插件本体发布
     teleportDelaySeconds = 5
     # 每个玩家可以往返几次（按人单独计算）
     roundTrips = 2
-    # 传送门另一端距离玩家最近多少格
-    minDistance = 256
-    # 传送门另一端距离玩家最远多少格
-    maxDistance = 2048
     # 门开在视线瞄准的位置，这是瞄准的最大距离（格）
     aimDistance = 24
     # 地牢传送石在玩家周围多少个区块内找地牢（1 区块 = 16 格）
     dungeonRadiusChunks = 20
+
+[destination]
+    # 末影传送石另一端：固定坐标
+    targetX = 1000
+    # Y 只当参考高度，落点由地形决定
+    targetY = 64
+    targetZ = 1000
+    # 那一带放不下时向周围找空地的最大半径（格），0 = 只认那一个点
+    targetSearchRadius = 16
 ```
 
 想改成"只能往返一次"就把 `roundTrips` 设成 1（**每个人**都只能往返一次）；
@@ -479,6 +495,14 @@ ModDevGradle 是 NeoForge 官方现在主推的构建插件，插件本体发布
 `dungeonRadiusChunks` 调大能扩大地牢搜索范围（默认 20 区块 = 320 格，最大 48 区块），
 但只有**已加载**的区块会被扫到，所以实际范围还受视野/模拟距离限制。
 默认 20 区块比默认视野（10~12 区块）宽得多，所以视野内的地牢一定会被扫到。
+
+末影传送石的另一个端由 `[destination]` 的 `targetX / targetY / targetZ` 决定（v1.11 起）。
+**坐标只是锚点，不是硬钉死在那一格**：`targetY` 当参考高度，真正的落点由地形决定
+（在这一列上下找站得住的地面，不是树叶、不是水面）；那一带放不下整座门时，
+按 `targetSearchRadius` 由近到远向周围找空地，只往水平方向外扩，Y 始终跟着地形走。
+设成 0 就只认那一个点，放不下就报错。
+`minDistance` / `maxDistance` 在 v1.11 已删除（固定坐标后不再按距离找群系），
+旧配置里留着这两个键不会有影响。
 
 > 键名从 v1.05 的 `dungeonSearchChunks` 改成了 `dungeonRadiusChunks`。
 > 改名的原因是：NeoForge **不会覆盖**配置文件里已有的旧值，所以光改默认值
@@ -599,11 +623,14 @@ src/main/java/com/example/enderportal/
 
 ## 7. 已知情况（重要）
 
-- **v1.10 的代码已用 `javac --release 21` 对真实的 NeoForge 21.1.72 类路径编译通过**
+- **v1.11 的代码已用 `javac --release 21` 对真实的 NeoForge 21.1.72 类路径编译通过**
   （14 个源文件 → 28 个 class，`-Xlint:all` 无警告），jar 也已按同一份 class 打包。
   但**没有进游戏实测**（沙箱里 Gradle 无法启动，也起不了客户端），
   所以"瞄准点吸附到地面"的实际手感、结构生成位置、地牢定位的命中率、进度条位置、
   多人同时穿门的实际表现、粒子/音效这类体感效果，请以你本地实际游玩为准。
+- **门面动画的观感没实测过。** 32 帧 × 2 tick、`interpolate: true` 是按原版动画格式
+  对照着做的，时长约 3.2 秒一轮；色调和流速如果觉得不对，改 `tools/gen_textures.py`
+  里的 `PORTAL_FRAMES` / `PORTAL_FRAME_TICKS` 重跑就能换。
 - 地牢搜索只扫**已加载区块**，所以：
   - 在地下挖矿、周围区块都加载着的时候最容易找到；
   - 如果提示"附近没有找到地牢"，往别处走走（让新区块加载）再试，

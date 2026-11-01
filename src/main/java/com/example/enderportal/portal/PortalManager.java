@@ -2,15 +2,13 @@ package com.example.enderportal.portal;
 
 import com.example.enderportal.Config;
 import com.example.enderportal.EnderPortal;
+import com.example.enderportal.block.RemotePortalBlock;
 import com.example.enderportal.block.RemotePortalBlockEntity;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.core.Holder;
-import net.minecraft.core.QuartPos;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -19,15 +17,11 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.util.Mth;
-import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.StairBlock;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.chunk.ChunkAccess;
-import net.minecraft.world.level.chunk.status.ChunkStatus;
-import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -118,14 +112,6 @@ public final class PortalManager {
     private static final int DUNGEON_WALL_MAX = 5;
     /** 一次最多试几个地牢候选（最近那个可能四面没墙，或者玩家自己站在里面）。 */
     private static final int MAX_DUNGEON_CANDIDATES = 6;
-    /**
-     * 找远端群系时，最多真正生成几个区块。
-     *
-     * <p>每个候选点都要 {@code getChunk(x, z)} 完整生成地形，在 2048 格外是很重的操作。
-     * 上限给 3，最坏情况一次开门也只是几秒的零头；找不到就报"没有找到合适的群系"，
-     * 让玩家换个位置再试，而不是硬卡。</p>
-     */
-    private static final int MAX_TARGET_CHUNKS = 3;
 
     /**
      * 拆门重入保护：拆除过程中 setBlock 会再次触发 onRemove，
@@ -216,7 +202,7 @@ public final class PortalManager {
             return near.error();
         }
 
-        BlockPos target = findTarget(level, player.blockPosition(), near.front());
+        BlockPos target = findTarget(level, near.front());
         if (target == null) {
             return Result.NO_TARGET;
         }
@@ -230,9 +216,11 @@ public final class PortalManager {
 
         warnIfSelfCovered(player, near.origin(), near.front());
 
-        Component biomeName = biomeName(level, target);
+        // 报坐标而不是群系名：现在另一端是固定坐标，玩家更关心"通到哪儿"。
+        // 实际落点可能因为找空地而偏离配置值几格，所以报实测坐标
         player.displayClientMessage(Component.translatable("message.enderportal.created",
-                biomeName, uses / 2).withStyle(ChatFormatting.LIGHT_PURPLE), false);
+                target.getX(), target.getY(), target.getZ(), uses / 2)
+                .withStyle(ChatFormatting.LIGHT_PURPLE), false);
 
         return Result.OK;
     }
@@ -1043,86 +1031,95 @@ public final class PortalManager {
     }
 
     /**
-     * 找另一座门的位置；找不到返回 null。
+     * 另一座门开在配置里指定的坐标附近；放不下返回 {@code null}。
      *
-     * <p>开销主要在"真正生成地形"：{@code getChunk(x, z, BIOMES, true)} 只到群系阶段，
-     * 很便宜；但确认群系不同之后要 {@code getChunk(x, z)} 完整生成，那是重活。
-     * 所以：</p>
+     * <p>以前是在 256~2048 格范围内随机撒点、找"和当前群系不同"的地方，
+     * 所以每次开门通到哪儿都是随机的。现在改成<b>固定坐标</b>：
+     * 目标由 {@code enderportal-common.toml} 的 {@code targetX / targetY / targetZ} 决定。</p>
+     *
+     * <p>坐标只当作"锚点"，不是硬钉死在那一格：</p>
      * <ul>
-     *   <li>候选点数量上限降到 {@link #MAX_TARGET_CHUNKS}，满 2048 格开一次门最多生成
-     *       这么多个区块，不会一卡好几秒；</li>
-     *   <li>完整生成前先用已有的高度图粗筛一遍，明显放不下（水面、悬崖）的直接放弃，
-     *       省掉一次地形生成。</li>
+     *   <li>Y 是参考高度，真正的落点由 {@link #resolveOrigin} 在这一列上下找
+     *       "站得住的地面"，所以填到半空也不会把门架在天上；</li>
+     *   <li>那一带放不下整座门（山地、水面、树多、有别人的建筑）时，
+     *       按 {@code targetSearchRadius} 由近到远向周围找空地，
+     *       保证"说的那个地方"能开出东西来，而不是直接报错。</li>
      * </ul>
      */
-    private static BlockPos findTarget(ServerLevel level, BlockPos playerPos, Direction front) {
-        ResourceKey<Biome> currentKey = level.getBiome(playerPos).unwrapKey().orElse(null);
+    private static BlockPos findTarget(ServerLevel level, Direction front) {
+        BlockPos destination = new BlockPos(
+                Config.TARGET_X.get(), Config.TARGET_Y.get(), Config.TARGET_Z.get());
 
-        RandomSource random = level.getRandom();
-        int minDistance = Math.max(32, Config.MIN_DISTANCE.get());
-        int maxDistance = Math.max(minDistance + 64, Config.MAX_DISTANCE.get());
-        Direction lateral = front.getCounterClockWise();
-        int probeY = Mth.clamp(64, level.getMinBuildHeight(), level.getMaxBuildHeight() - 1);
+        // 目标所在的区块得先有地形，才能谈"这一列哪里站得住"
+        level.getChunk(destination.getX() >> 4, destination.getZ() >> 4);
 
-        int generated = 0;
-        for (int attempt = 0; attempt < 64 && generated < MAX_TARGET_CHUNKS; attempt++) {
-            double angle = random.nextDouble() * Math.PI * 2.0D;
-            int distance = minDistance + random.nextInt(maxDistance - minDistance);
-            int x = playerPos.getX() + (int) Math.round(Math.cos(angle) * (double) distance);
-            int z = playerPos.getZ() + (int) Math.round(Math.sin(angle) * (double) distance);
-
-            // 只生成到 BIOMES 阶段就能读到群系，避免每个候选点都完整生成区块
-            ChunkAccess biomeChunk = level.getChunk(x >> 4, z >> 4, ChunkStatus.BIOMES, true);
-            if (biomeChunk == null) {
-                continue;
-            }
-            Holder<Biome> candidate = biomeChunk.getNoiseBiome(
-                    QuartPos.fromBlock(x), QuartPos.fromBlock(probeY), QuartPos.fromBlock(z));
-            ResourceKey<Biome> candidateKey = candidate.unwrapKey().orElse(null);
-            if (candidateKey == null || (currentKey != null && candidateKey.equals(currentKey))) {
-                continue; // 和当前群系相同，换一个
-            }
-
-            // 粗筛：这片区块已经有高度图了就先看一眼，明显是水面就别浪费一次地形生成。
-            // 没到那一步就当作"还不知道"，继续往下走。
-            BlockPos surface = level.getHeightmapPos(Heightmap.Types.WORLD_SURFACE, new BlockPos(x, 0, z));
-            BlockPos floor = surface.below();
-            if (!biomeChunk.getBlockState(floor).getFluidState().isEmpty()) {
-                continue;
-            }
-
-            // 命中不同群系 + 粗筛通过，才真正生成地形
-            level.getChunk(x >> 4, z >> 4);
-            generated++;
-
-            // 让这一列落在高台中央（局部 x=2, z=1）
-            BlockPos probe = new BlockPos(
-                    surface.getX() - lateral.getStepX() * 2 - front.getStepX(),
-                    0,
-                    surface.getZ() - lateral.getStepZ() * 2 - front.getStepZ());
-
-            // 每一列都真的找到"站得住的地面"才建；水面、树叶、悬崖边会被跳过
-            int[][] surfaces = footprintSurfaces(level, probe, front, surface.getY());
-            if (surfaces == null) {
-                continue;
-            }
-            Bounds bounds = boundsOf(surfaces);
-            if (bounds.tooSteep()) {
-                continue; // 地形起伏太大，高台会很难看
-            }
-            BlockPos origin = new BlockPos(probe.getX(), bounds.min() + BASE_OFFSET, probe.getZ());
-            if (!hasRoom(level, origin, front)) {
-                continue;
-            }
-            return origin;
+        BlockPos origin = resolveOriginAround(level, destination, front);
+        if (origin == null) {
+            return null;
         }
-        return null;
+        // 门框那一面得能走人，否则落点会贴着一堵墙
+        return hasRoom(level, origin, front) ? origin : null;
     }
 
-    private static Component biomeName(ServerLevel level, BlockPos pos) {
-        return level.getBiome(pos).unwrapKey()
-                .<Component>map(key -> Component.translatable(key.location().toLanguageKey("biome")))
-                .orElse(Component.translatable("message.enderportal.unknown_biome"));
+    /**
+     * 在 {@code anchor} 周围 {@link Config#TARGET_SEARCH_RADIUS} 格内找一块放得下整座门的空地。
+     *
+     * <p>和瞄准开门那边用的是同一套 {@link #resolveOrigin}：它本身就支持
+     * "以某一列为锚点、按切比雪夫距离一圈圈外扩"，这里只需要把外扩半径换成配置值。</p>
+     *
+     * <p>注意<b>只往水平方向外扩</b>：Y 由地形自己决定，不跟着半径乱跑，
+     * 否则半径一大门就可能跑到几十格高的山上去。</p>
+     *
+     * @return 结构原点；整个范围内都放不下返回 {@code null}
+     */
+    private static BlockPos resolveOriginAround(ServerLevel level, BlockPos anchor, Direction front) {
+        int radius = Math.max(0, Config.TARGET_SEARCH_RADIUS.get());
+        Direction lateral = front.getCounterClockWise();
+
+        // 目标区块可能刚生成，先把半径覆盖到的区块都准备好，避免后面反复隐式加载
+        for (int chunkX = (anchor.getX() - radius) >> 4; chunkX <= (anchor.getX() + radius) >> 4; chunkX++) {
+            for (int chunkZ = (anchor.getZ() - radius) >> 4; chunkZ <= (anchor.getZ() + radius) >> 4; chunkZ++) {
+                level.getChunk(chunkX, chunkZ);
+            }
+        }
+
+        ColumnCache cache = new ColumnCache(level, anchor.getY());
+        try {
+            for (int r = 0; r <= radius; r++) {
+                for (int dx = -r; dx <= r; dx++) {
+                    for (int dz = -r; dz <= r; dz++) {
+                        if (Math.max(Math.abs(dx), Math.abs(dz)) != r) {
+                            continue;
+                        }
+                        BlockPos probe = new BlockPos(
+                                anchor.getX() + dx - lateral.getStepX() * 2 - front.getStepX(), 0,
+                                anchor.getZ() + dz - lateral.getStepZ() * 2 - front.getStepZ());
+
+                        // 锚点那一列上下都可能站得住，由近到远逐个试
+                        List<Integer> grounds = cache.groundCandidatesAt(
+                                anchor.getX() + dx, anchor.getZ() + dz, anchor.getY(),
+                                GROUND_SEARCH_DOWN, GROUND_SEARCH_UP, MAX_GROUND_CANDIDATES);
+                        for (int ground : grounds) {
+                            int[][] surfaces = footprintSurfaces(level, probe, front, ground, cache);
+                            if (surfaces == null) {
+                                continue;
+                            }
+                            Bounds bounds = boundsOf(surfaces);
+                            if (bounds.tooSteep()) {
+                                continue;
+                            }
+                            BlockPos origin = new BlockPos(probe.getX(), bounds.min() + BASE_OFFSET, probe.getZ());
+                            if (hasRoom(level, origin, front)) {
+                                return origin;
+                            }
+                        }
+                    }
+                }
+            }
+        } finally {
+            cache.clear();
+        }
+        return null;
     }
 
     /* ------------------------------------------------------------------ */
@@ -1185,7 +1182,9 @@ public final class PortalManager {
             }
 
             // 2) 摆放
-            BlockState portalState = EnderPortal.REMOTE_PORTAL.get().defaultBlockState();
+            // 门面带上 FACING：薄片模型按它转到门框平面上，否则朝东西的门会看到薄片横穿门洞
+            BlockState portalState = EnderPortal.REMOTE_PORTAL.get().defaultBlockState()
+                    .setValue(RemotePortalBlock.FACING, front);
             for (Piece piece : pieces(origin, front, portalState, platform)) {
                 level.setBlockAndUpdate(piece.pos(), piece.state());
                 if (piece.state().is(EnderPortal.REMOTE_PORTAL.get())

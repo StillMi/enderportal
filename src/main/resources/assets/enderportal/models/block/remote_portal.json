@@ -1,7 +1,17 @@
 {
-  "parent": "minecraft:block/cube_all",
   "render_type": "minecraft:translucent",
   "textures": {
-    "all": "enderportal:block/remote_portal"
-  }
+    "particle": "enderportal:block/remote_portal",
+    "portal": "enderportal:block/remote_portal"
+  },
+  "elements": [
+    {
+      "from": [0, 0, 6],
+      "to": [16, 16, 10],
+      "faces": {
+        "north": { "uv": [0, 0, 16, 16], "texture": "#portal" },
+        "south": { "uv": [0, 0, 16, 16], "texture": "#portal" }
+      }
+    }
+  ]
 }

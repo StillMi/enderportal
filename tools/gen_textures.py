@@ -6,6 +6,7 @@
 
 用法：python tools/gen_textures.py
 """
+import json
 import math
 import os
 import random
@@ -178,29 +179,71 @@ def make_dungeon_item() -> Image.Image:
     return img
 
 
+PORTAL_FRAMES = 32
+PORTAL_FRAME_TICKS = 2
+
+
 def make_portal() -> Image.Image:
-    img = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+    """传送门方块：多帧竖向拼图 + 流动的紫色漩涡。
+
+    下界门那种观感来自两件事，这里都照做：
+      1. 贴图是**多帧动画**（竖着拼一列，配 .mcmeta），不是一张静态图；
+      2. 每一帧的亮部沿某个方向平移，连起来看就是"在流动"。
+
+    紫色调配合末影主题：暗紫底 + 亮紫流带 + 零星白紫颗粒。
+    """
+    width = SIZE
+    height = SIZE * PORTAL_FRAMES
+    img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     px = img.load()
 
-    for y in range(SIZE):
-        for x in range(SIZE):
-            v = 0.5 + 0.5 * math.sin(x * 0.85 + y * 0.55)
-            w = 0.5 + 0.5 * math.sin(x * 0.30 - y * 1.10 + 1.7)
-            m = v * 0.6 + w * 0.4
-            r = int(58 + 52 * m)
-            g = int(14 + 26 * m)
-            b = int(96 + 96 * m)
-            a = int(150 + 80 * m)
-            px[x, y] = (r, g, b, a)
-
     random.seed(5)
-    for _ in range(30):
-        x, y = random.randrange(SIZE), random.randrange(SIZE)
-        px[x, y] = (214, 176, 255, 235)
-    for _ in range(14):
-        x, y = random.randrange(SIZE), random.randrange(SIZE)
-        px[x, y] = (30, 8, 52, 235)
+    # 颗粒位置在整段动画里固定，只跟着流向缓慢上移，避免每帧乱跳
+    specks = [
+        (random.randrange(width), random.uniform(0, SIZE),
+         random.choice([(226, 196, 255), (180, 130, 255)]))
+        for _ in range(26)
+    ]
+
+    for frame in range(PORTAL_FRAMES):
+        phase = frame / PORTAL_FRAMES * math.tau
+        for y in range(SIZE):
+            for x in range(width):
+                # 两条不同速度的波叠出漩涡感；phase 让它逐帧整体平移
+                v = 0.5 + 0.5 * math.sin(x * 0.85 + y * 0.55 + phase)
+                w = 0.5 + 0.5 * math.sin(x * 0.30 - y * 1.10 + 1.7 - phase * 1.6)
+                m = v * 0.6 + w * 0.4
+
+                r = int(52 + 58 * m)
+                g = int(10 + 30 * m)
+                b = int(92 + 104 * m)
+                # 亮的地方更实、暗的地方更透，透出后面的方块
+                a = int(140 + 90 * m)
+                px[x, y + frame * SIZE] = (r, g, b, a)
+
+        # 颗粒随相位缓慢上移，循环回到画面底部
+        for (sx, sy0, color) in specks:
+            sy = (sy0 - frame * (SIZE / PORTAL_FRAMES)) % SIZE
+            px[sx, int(sy) + frame * SIZE] = (color[0], color[1], color[2], 235)
+
     return img
+
+
+def portal_mcmeta() -> str:
+    """动画描述：逐帧播放，每帧 PORTAL_FRAME_TICKS tick。
+
+    显式写出 width / height。不写的话原版会取 min(宽, 高) 当帧尺寸，
+    我们这张 16x512 恰好是 16 才没错；写出来就不依赖这个巧合了。
+    """
+    data = {
+        "animation": {
+            "frametime": PORTAL_FRAME_TICKS,
+            "interpolate": True,
+            "width": SIZE,
+            "height": SIZE,
+        }
+    }
+    return json.dumps(data, indent=2) + chr(10)
 
 
 def main() -> None:
@@ -219,6 +262,13 @@ def main() -> None:
         image.save(path)
         with Image.open(path) as im:
             print(f"{path} -> {im.size} {im.mode}")
+
+    # 传送门那张是多帧动画，必须配一个 .mcmeta 才会逐帧播放
+    portal_png = os.path.join(block_dir, "remote_portal.png")
+    meta_path = portal_png + ".mcmeta"
+    with open(meta_path, "w", encoding="utf-8") as f:
+        f.write(portal_mcmeta())
+    print(f"{meta_path} -> {PORTAL_FRAMES} frames x {PORTAL_FRAME_TICKS} tick")
 
 
 if __name__ == "__main__":
