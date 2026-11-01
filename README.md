@@ -1,10 +1,19 @@
-# 末影传送石 (Ender Portal Stone) v1.11
+# 末影传送石 (Ender Portal Stone) v1.12
 
 一个 Minecraft **1.21.1 / NeoForge 21.1.x** 小模组：用 8 块黑曜石 + 1 颗末影珍珠合成一颗"石头"，
 **长按右键引导 4 秒**（屏幕下方有进度条）后，在**你鼠标瞄准的位置**与**另一个生物群系**之间
 打开一对相通的「台阶 + 高台 + 传送门」，**每人**往返 2 次后自动失效，每次使用有 1 分钟冷却。
 一块传送石最多只能开门 **3 次**，用完即毁；每次新开门，上一座还没失效的门会自动消散。
 
+> **v1.12 变更**（游戏内填坐标，每块石头一个地点）：
+>
+> 1. **手持末影传送石潜行 + 右键** → 弹出坐标输入界面，填 X / Y / Z。
+>    坐标绑在**这块石头自己身上**（物品数据组件 `enderportal:portal_target`），
+>    所以一块石头只有一个目的地，想要多个就多做几块石头。
+> 2. **配置文件退回成默认值** —— 石头绑过坐标就用石头的；没绑过（含老存档的旧石头）
+>    才用 `[destination]` 里的 `targetX / targetY / targetZ`，升级不会让已有石头失效。
+> 3. 物品说明会显示当前目标坐标，没绑过的写"未绑定（使用配置文件默认值）"。
+>
 > **v1.11 变更**（末影传送石改固定坐标 + 门面换成下界门特效）：
 >
 > 1. **末影传送石改成固定坐标** —— 以前在 256~2048 格内随机找"和当前群系不同"的地方，
@@ -163,6 +172,33 @@
 - 生成时会先挖空门洞、高台上方和台阶上方，再把高台从地面垫起来，所以不会"门埋在土里"。
 - 四方向通用：所有方块坐标都由「原点 + 朝向」算出来（`PortalManager.localPos`），
   门面永远朝着玩家，台阶朝玩家这一侧铺。
+
+### 怎么设置末影传送石的目的地（v1.12 起）
+
+**手持末影传送石，潜行 + 右键**，弹出坐标输入界面：
+
+```
+┌──────────────────────────┐
+│     传送石目标坐标        │
+│  X [      1000          ] │
+│  Y [        64          ] │
+│  Z [      1000          ] │
+│   [  确定  ]  [  取消  ]  │
+└──────────────────────────┘
+```
+
+- 预填的是**这块石头已经绑的坐标**；没绑过就填你**当前站的位置**；
+- 只接受数字和负号，回车等于"确定"；
+- 坐标存在**这块石头自己身上**，所以一块石头只有一个目的地 ——
+  想要好几个目的地就多做几块石头，各填各的；
+- 物品说明里会显示当前目标坐标，没绑过的写"未绑定（使用配置文件默认值）"。
+
+绑定的坐标只是**锚点**，不是硬钉死在那一格：
+Y 当参考高度，真正的落点由地形决定（会在这一列上下找站得住的地面）；
+那一带放不下整座门时，按 `targetSearchRadius` 由近到远向周围找空地。
+
+> 传送石是 `durability` 物品，原版会把最大堆叠数强制设成 1，所以它天然不可堆叠 ——
+> "一块石头一个地点"是按物品算的，不会出现一摞石头共用一个坐标。
 
 ### 门开在哪里（v1.03 起，v1.06 放宽）
 
@@ -349,7 +385,7 @@ v1.09 的修法：
 1. `File → Open` 选择本目录（`enderportal`），以 Gradle 项目导入。
 2. 等待依赖下载完成（首次会从 `maven.neoforged.net` 拉取 NeoForge）。
 3. 右侧 Gradle 面板 → `Tasks → neoforge runs → runClient` 启动开发客户端。
-4. `Tasks → build → build` 生成 `build/libs/enderportal-1.11.jar`，丢进 `mods/` 即可。
+4. `Tasks → build → build` 生成 `build/libs/enderportal-1.12.jar`，丢进 `mods/` 即可。
 
 ### 方式 B：命令行（Gradle）
 
@@ -365,7 +401,7 @@ Gradle 在某些环境里起不来（`native-platform.dll` 加载失败）时，
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\compile.ps1   # 调 JBR 的 javac 直接编译 -> build\classes
-python tools\package.py                                      # 把 class + 资源打成 jar -> build\libs\enderportal-1.11.jar
+python tools\package.py                                      # 把 class + 资源打成 jar -> build\libs\enderportal-1.12.jar
 ```
 
 > `compile.ps1` 必须带 UTF-8 BOM 保存，否则 Windows PowerShell 5.1 会按 GBK 解析中文注释而报语法错。
@@ -375,9 +411,9 @@ python tools\package.py                                      # 把 class + 资�
 `tools\package.py` 会把 `neoforge.mods.toml` / `pack.mcmeta` 里的 `${...}` 用 `gradle.properties`
 展开，并固定 zip 时间戳，所以同样的输入永远得到同样的 jar（可复现）。
 
-产物：`build/libs/enderportal-1.11.jar`（装到 NeoForge 21.1.x 的 `mods` 目录）。
+产物：`build/libs/enderportal-1.12.jar`（装到 NeoForge 21.1.x 的 `mods` 目录）。
 
-> **本工程已经预置了一个编译好的成品**：`build/libs/enderportal-1.11.jar`
+> **本工程已经预置了一个编译好的成品**：`build/libs/enderportal-1.12.jar`
 > （36 个条目，class 全部是 Java 21 字节码，已用 `javac --release 21` 对真实
 > NeoForge 21.1.72 类路径编译通过，zip 完整性和 class 哈希都已核对）。
 > 重新构建会覆盖它。放到 `.minecraft/mods/` 里、启动 NeoForge 21.1.x 即可加载。
@@ -445,7 +481,7 @@ ModDevGradle 是 NeoForge 官方现在主推的构建插件，插件本体发布
 2. 把 `tools/build.gradle.moddev` 复制成根目录的 `build.gradle`
 3. 重新同步 / `.\gradlew build`
 
-两种构建脚本的产物完全一样（`build/libs/enderportal-1.11.jar`），代码不用改一行。
+两种构建脚本的产物完全一样（`build/libs/enderportal-1.12.jar`），代码不用改一行。
 
 ### 其他常见报错
 
@@ -496,7 +532,8 @@ ModDevGradle 是 NeoForge 官方现在主推的构建插件，插件本体发布
 但只有**已加载**的区块会被扫到，所以实际范围还受视野/模拟距离限制。
 默认 20 区块比默认视野（10~12 区块）宽得多，所以视野内的地牢一定会被扫到。
 
-末影传送石的另一个端由 `[destination]` 的 `targetX / targetY / targetZ` 决定（v1.11 起）。
+末影传送石的另一个端**优先用石头自己绑定的坐标**（v1.12 起，游戏里潜行 + 右键填）；
+石头没绑过（含老存档里的旧石头）才用 `[destination]` 的 `targetX / targetY / targetZ` 当默认值。
 **坐标只是锚点，不是硬钉死在那一格**：`targetY` 当参考高度，真正的落点由地形决定
 （在这一列上下找站得住的地面，不是树叶、不是水面）；那一带放不下整座门时，
 按 `targetSearchRadius` 由近到远向周围找空地，只往水平方向外扩，Y 始终跟着地形走。
@@ -525,9 +562,13 @@ src/main/java/com/example/enderportal/
 │                                 getTicker 每秒结构自检、客户端粒子
 ├── block/RemotePortalBlockEntity.java
 │                                 保存两端原点 + 朝向 + 各人剩余次数；executeTeleport 把实体送到对面高台
-├── client/                       仅客户端（@EventBusSubscriber(Dist.CLIENT)）
-│   ├── ClientSetup.java          注册 HUD 图层
-│   └── ChannelHud.java           引导进度条
+├── client/                       仅客户端
+│   ├── ClientSetup.java          注册 HUD 图层（@EventBusSubscriber(Dist.CLIENT)）
+│   ├── ChannelHud.java           引导进度条
+│   ├── ClientHooks.java          通用代码调客户端功能的唯一入口
+│   └── PortalTargetScreen.java   目标坐标输入界面（v1.12）
+├── net/
+│   └── SetTargetPayload.java     客户端 → 服务端：改石头绑定的坐标（v1.12）
 └── portal/
     ├── PortalManager.java        视线瞄准、落地搜索、局部坐标系、群系搜索、结构搭建/拆除、次数结算
     ├── DungeonFinder.java        翻已加载区块找地牢（刷怪笼 + 圆石地板）
@@ -623,8 +664,8 @@ src/main/java/com/example/enderportal/
 
 ## 7. 已知情况（重要）
 
-- **v1.11 的代码已用 `javac --release 21` 对真实的 NeoForge 21.1.72 类路径编译通过**
-  （14 个源文件 → 28 个 class，`-Xlint:all` 无警告），jar 也已按同一份 class 打包。
+- **v1.12 的代码已用 `javac --release 21` 对真实的 NeoForge 21.1.72 类路径编译通过**
+  （17 个源文件 → 31 个 class，`-Xlint:all` 无警告），jar 也已按同一份 class 打包。
   但**没有进游戏实测**（沙箱里 Gradle 无法启动，也起不了客户端），
   所以"瞄准点吸附到地面"的实际手感、结构生成位置、地牢定位的命中率、进度条位置、
   多人同时穿门的实际表现、粒子/音效这类体感效果，请以你本地实际游玩为准。

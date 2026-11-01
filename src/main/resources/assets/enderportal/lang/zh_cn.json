@@ -26,5 +26,16 @@
   "message.enderportal.player_exhausted": "你在这座门的传送次数已经用完了。",
   "message.enderportal.stone_uses_left": "传送石还能使用 %s 次",
   "message.enderportal.stone_exhausted": "传送石耗尽了最后的力量，化为尘埃。",
-  "message.enderportal.step_aside": "门开好了，不过你正站在门里，挪一步就好"
+  "message.enderportal.step_aside": "门开好了，不过你正站在门里，挪一步就好",
+  "screen.enderportal.target.title": "传送石目标坐标",
+  "screen.enderportal.target.x": "X",
+  "screen.enderportal.target.y": "Y",
+  "screen.enderportal.target.z": "Z",
+  "screen.enderportal.target.confirm": "确定",
+  "screen.enderportal.target.cancel": "取消",
+  "message.enderportal.target_set": "已绑定目标坐标：%s, %s, %s",
+  "message.enderportal.target_out_of_range": "Y 坐标超出这个世界的高度范围（%s ~ %s）。",
+  "tooltip.enderportal.portal_stone.target": "目标坐标：%s, %s, %s",
+  "tooltip.enderportal.portal_stone.no_target": "目标坐标：未绑定（使用配置文件默认值）",
+  "tooltip.enderportal.portal_stone.set_hint": "潜行 + 右键可修改目标坐标"
 }

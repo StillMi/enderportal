@@ -5,7 +5,11 @@ import com.example.enderportal.block.RemotePortalBlockEntity;
 import com.example.enderportal.item.AbstractPortalStoneItem;
 import com.example.enderportal.item.DungeonPortalStoneItem;
 import com.example.enderportal.item.PortalStoneItem;
+import com.example.enderportal.net.SetTargetPayload;
 import com.example.enderportal.portal.PortalTeleports;
+import com.mojang.serialization.Codec;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
@@ -21,6 +25,7 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
@@ -44,6 +49,22 @@ public class EnderPortal {
     public static final DeferredRegister.Blocks BLOCKS = DeferredRegister.createBlocks(MODID);
     public static final DeferredRegister<BlockEntityType<?>> BLOCK_ENTITIES =
             DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE, MODID);
+    public static final DeferredRegister.DataComponents DATA_COMPONENTS =
+            DeferredRegister.createDataComponents(Registries.DATA_COMPONENT_TYPE, MODID);
+
+    /**
+     * 这块传送石绑定的目标坐标。
+     *
+     * <p>存在 <b>ItemStack</b> 上，所以每块石头各自记各自的 —— 一块石头只能绑一个地点，
+     * 但同一个人可以有好几块石头分别指到不同地方。组件不存在时退回配置文件里的
+     * {@code targetX / targetY / targetZ}，老存档和没绑过的石头照常能用。</p>
+     */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<BlockPos>> PORTAL_TARGET =
+            DATA_COMPONENTS.registerComponentType(
+                    "portal_target",
+                    builder -> builder
+                            .persistent(BlockPos.CODEC)
+                            .networkSynchronized(BlockPos.STREAM_CODEC));
 
     /**
      * 末影传送石：8 黑曜石 + 1 末影珍珠合成。
@@ -90,13 +111,21 @@ public class EnderPortal {
         ITEMS.register(modEventBus);
         BLOCKS.register(modEventBus);
         BLOCK_ENTITIES.register(modEventBus);
+        DATA_COMPONENTS.register(modEventBus);
 
         modEventBus.addListener(this::addCreative);
+        modEventBus.addListener(this::registerPayloads);
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
 
         // 传送不能在 entityInside 里就地执行（会被 handleMovePlayer 的位置纠偏拉回去），
         // 统一排到 tick 末尾，见 PortalTeleports
         NeoForge.EVENT_BUS.addListener(PortalTeleports::onServerTickPost);
+    }
+
+    /** 客户端改坐标 → 服务端落库。 */
+    private void registerPayloads(RegisterPayloadHandlersEvent event) {
+        event.registrar("1").playToServer(
+                SetTargetPayload.TYPE, SetTargetPayload.STREAM_CODEC, SetTargetPayload::handle);
     }
 
     private void addCreative(BuildCreativeModeTabContentsEvent event) {

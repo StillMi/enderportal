@@ -1,8 +1,11 @@
 package com.example.enderportal.item;
 
 import com.example.enderportal.Config;
+import com.example.enderportal.EnderPortal;
+import com.example.enderportal.client.ClientHooks;
 import com.example.enderportal.portal.PortalManager;
 import net.minecraft.ChatFormatting;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -17,6 +20,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.UseAnim;
 import net.minecraft.world.level.Level;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.fml.loading.FMLEnvironment;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
@@ -48,9 +54,12 @@ public abstract class AbstractPortalStoneItem extends Item {
     /**
      * 真正开门。只在服务端、引导完成时调用。
      *
+     * @param target 这块石头绑定的目标坐标；{@code null} 表示没绑过，
+     *               交给实现退回配置文件里的默认值
      * @return 开门结果；非 {@link PortalManager.Result#OK} 时不会扣次数
      */
-    protected abstract PortalManager.Result openPortal(ServerLevel level, ServerPlayer player);
+    protected abstract PortalManager.Result openPortal(ServerLevel level, ServerPlayer player,
+                                                       @Nullable BlockPos target);
 
     /** 失败提示的翻译键，按原因区分。 */
     protected abstract String failureKey(PortalManager.Result result);
@@ -62,12 +71,24 @@ public abstract class AbstractPortalStoneItem extends Item {
     protected abstract String loreKey();
 
     /** 子类可以往说明里再插几行（默认不插）。 */
-    protected void appendExtraTooltip(List<Component> tooltip) {
+    protected void appendExtraTooltip(List<Component> tooltip, ItemStack stack) {
     }
 
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
+
+        // 潜行 + 右键 = 打开"目标坐标"界面，不进入引导。
+        // 界面只在客户端开；服务端这边直接放行，等客户端发 SetTargetPayload 过来。
+        // 这里用 FMLEnvironment.dist 显式判断，而不是只靠 level.isClientSide()：
+        // ClientHooks 标了 @OnlyIn(CLIENT)，专用服务器上连"执行到这一行"都不要发生，
+        // 否则类校验可能提前去加载一个只有客户端才有的类。
+        if (player.isShiftKeyDown()) {
+            if (FMLEnvironment.dist == Dist.CLIENT) {
+                ClientHooks.openTargetScreen(hand);
+            }
+            return InteractionResultHolder.success(stack);
+        }
 
         if (player.getCooldowns().isOnCooldown(this)) {
             if (!level.isClientSide()) {
@@ -80,6 +101,16 @@ public abstract class AbstractPortalStoneItem extends Item {
         // 开始引导：之后由原版每 tick 递减 useItemRemaining，走完调用 finishUsingItem
         player.startUsingItem(hand);
         return InteractionResultHolder.consume(stack);
+    }
+
+    /**
+     * 这块石头绑定的目标坐标；没绑过返回 {@code null}。
+     *
+     * <p>存在 ItemStack 的数据组件上，所以每块石头各记各的。</p>
+     */
+    @Nullable
+    public static BlockPos boundTarget(ItemStack stack) {
+        return stack.get(EnderPortal.PORTAL_TARGET.get());
     }
 
     /** 引导时长。原版用它作为"使用进度"的总量，进度条也按它算比例。 */
@@ -104,7 +135,7 @@ public abstract class AbstractPortalStoneItem extends Item {
             return stack;
         }
 
-        PortalManager.Result result = openPortal(serverLevel, player);
+        PortalManager.Result result = openPortal(serverLevel, player, boundTarget(stack));
         if (result != PortalManager.Result.OK) {
             player.displayClientMessage(
                     Component.translatable(failureKey(result)).withStyle(ChatFormatting.RED), true);
@@ -150,7 +181,7 @@ public abstract class AbstractPortalStoneItem extends Item {
         tooltip.add(Component.translatable("tooltip.enderportal.portal_stone.uses", left, maxDamage)
                 .withStyle(ChatFormatting.DARK_PURPLE));
 
-        appendExtraTooltip(tooltip);
+        appendExtraTooltip(tooltip, stack);
 
         tooltip.add(Component.translatable("tooltip.enderportal.portal_stone.channel", Config.CHANNEL_SECONDS.get())
                 .withStyle(ChatFormatting.DARK_AQUA));

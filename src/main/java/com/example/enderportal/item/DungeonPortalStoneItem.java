@@ -29,7 +29,9 @@ public class DungeonPortalStoneItem extends AbstractPortalStoneItem {
     }
 
     @Override
-    protected PortalManager.Result openPortal(ServerLevel level, ServerPlayer player) {
+    protected PortalManager.Result openPortal(ServerLevel level, ServerPlayer player,
+                                              net.minecraft.core.BlockPos target) {
+        // 地牢石的目的地是"附近的地牢"，不用石头绑定的坐标，所以这个参数忽略
         return PortalManager.openDungeonPortalPair(level, player);
     }
 
@@ -54,7 +56,7 @@ public class DungeonPortalStoneItem extends AbstractPortalStoneItem {
     }
 
     @Override
-    protected void appendExtraTooltip(List<Component> tooltip) {
+    protected void appendExtraTooltip(List<Component> tooltip, net.minecraft.world.item.ItemStack stack) {
         tooltip.add(Component.translatable("tooltip.enderportal.dungeon_stone.trips", Config.ROUND_TRIPS.get())
                 .withStyle(ChatFormatting.DARK_PURPLE));
         tooltip.add(Component.translatable("tooltip.enderportal.dungeon_stone.search",

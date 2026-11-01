@@ -26,6 +26,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -196,13 +197,13 @@ public final class PortalManager {
      * 找最近的地面；那一列实在放不下，就按距离由近到远挪到邻近的平地，
      * 避免出现"门挂在半空"。</p>
      */
-    public static Result openPortalPair(ServerLevel level, ServerPlayer player) {
+    public static Result openPortalPair(ServerLevel level, ServerPlayer player, @Nullable BlockPos boundTarget) {
         NearEnd near = resolveNearEnd(level, player);
         if (!near.ok()) {
             return near.error();
         }
 
-        BlockPos target = findTarget(level, near.front());
+        BlockPos target = findTarget(level, near.front(), boundTarget);
         if (target == null) {
             return Result.NO_TARGET;
         }
@@ -1031,24 +1032,27 @@ public final class PortalManager {
     }
 
     /**
-     * 另一座门开在配置里指定的坐标附近；放不下返回 {@code null}。
+     * 另一座门开在目标坐标附近；放不下返回 {@code null}。
      *
-     * <p>以前是在 256~2048 格范围内随机撒点、找"和当前群系不同"的地方，
-     * 所以每次开门通到哪儿都是随机的。现在改成<b>固定坐标</b>：
-     * 目标由 {@code enderportal-common.toml} 的 {@code targetX / targetY / targetZ} 决定。</p>
+     * <p>目标来源有两个：</p>
+     * <ul>
+     *   <li><b>石头自己绑定的坐标</b>（{@code boundTarget}，玩家在游戏里填的那个）——
+     *       每块石头各记各的，所以同一批石头可以指向不同地方；</li>
+     *   <li>没绑过就退回配置文件里的 {@code targetX / targetY / targetZ}。</li>
+     * </ul>
      *
      * <p>坐标只当作"锚点"，不是硬钉死在那一格：</p>
      * <ul>
      *   <li>Y 是参考高度，真正的落点由 {@link #resolveOrigin} 在这一列上下找
      *       "站得住的地面"，所以填到半空也不会把门架在天上；</li>
      *   <li>那一带放不下整座门（山地、水面、树多、有别人的建筑）时，
-     *       按 {@code targetSearchRadius} 由近到远向周围找空地，
-     *       保证"说的那个地方"能开出东西来，而不是直接报错。</li>
+     *       按 {@code targetSearchRadius} 由近到远向周围找空地。</li>
      * </ul>
      */
-    private static BlockPos findTarget(ServerLevel level, Direction front) {
-        BlockPos destination = new BlockPos(
-                Config.TARGET_X.get(), Config.TARGET_Y.get(), Config.TARGET_Z.get());
+    private static BlockPos findTarget(ServerLevel level, Direction front, @Nullable BlockPos boundTarget) {
+        BlockPos destination = boundTarget != null
+                ? boundTarget
+                : new BlockPos(Config.TARGET_X.get(), Config.TARGET_Y.get(), Config.TARGET_Z.get());
 
         // 目标所在的区块得先有地形，才能谈"这一列哪里站得住"
         level.getChunk(destination.getX() >> 4, destination.getZ() >> 4);

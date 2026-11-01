@@ -26,5 +26,16 @@
   "message.enderportal.player_exhausted": "You have no trips left on this portal.",
   "message.enderportal.stone_uses_left": "The stone can open %s more portals.",
   "message.enderportal.stone_exhausted": "The stone crumbles, its last spark spent.",
-  "message.enderportal.step_aside": "The portal is open, but you are standing inside it - step aside"
+  "message.enderportal.step_aside": "The portal is open, but you are standing inside it - step aside",
+  "screen.enderportal.target.title": "Portal Stone Target",
+  "screen.enderportal.target.x": "X",
+  "screen.enderportal.target.y": "Y",
+  "screen.enderportal.target.z": "Z",
+  "screen.enderportal.target.confirm": "Confirm",
+  "screen.enderportal.target.cancel": "Cancel",
+  "message.enderportal.target_set": "Target set to %s, %s, %s",
+  "message.enderportal.target_out_of_range": "Y is outside this world's height range (%s to %s).",
+  "tooltip.enderportal.portal_stone.target": "Target: %s, %s, %s",
+  "tooltip.enderportal.portal_stone.no_target": "Target: not set (uses the config default)",
+  "tooltip.enderportal.portal_stone.set_hint": "Sneak + right-click to change the target"
 }
