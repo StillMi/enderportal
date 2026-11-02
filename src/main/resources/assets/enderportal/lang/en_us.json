@@ -11,7 +11,7 @@
   "tooltip.enderportal.dungeon_stone.trips": "Round trips per player: %s",
   "tooltip.enderportal.dungeon_stone.search": "Dungeon search radius: %s blocks",
   "tooltip.enderportal.dungeon_stone.lore": "Flame crawls across the stone, stubbornly pointing down into the dark......",
-  "hud.enderportal.channeling": "Channeling... %s%%",
+  "hud.enderportal.channeling": "Channeling... %ss",
   "message.enderportal.cooldown": "The stone is still recharging.",
   "message.enderportal.no_target": "No room for a portal near the configured coordinates. Adjust targetX / targetY / targetZ or raise targetSearchRadius.",
   "message.enderportal.no_ground": "There is no solid ground here. Aim at a steady surface.",

@@ -11,7 +11,7 @@
   "tooltip.enderportal.dungeon_stone.trips": "每人可往返：%s 次",
   "tooltip.enderportal.dungeon_stone.search": "地牢搜索半径：%s 格",
   "tooltip.enderportal.dungeon_stone.lore": "火焰在石头表面游走，执拗地指向地底深处......",
-  "hud.enderportal.channeling": "引导中…… %s%%",
+  "hud.enderportal.channeling": "引导中…… %ss",
   "message.enderportal.cooldown": "传送石还在充能……",
   "message.enderportal.no_target": "坐标那一带找不到能放门的地方，请调整 targetX / targetY / targetZ 或把 targetSearchRadius 调大。",
   "message.enderportal.no_ground": "这里的地面站不住脚，瞄准一块结实的地面再试。",
