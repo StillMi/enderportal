@@ -224,48 +224,39 @@ public class RemotePortalBlockEntity extends BlockEntity {
     }
 
     /**
-     * 实体踩进传送门方块时调用。
+     * 这座门现在能不能接这个实体。
      *
-     * <p><b>这里既不传送、也不排队，只登记"它想从这座门走"。</b>两个原因：</p>
-     *
-     * <ol>
-     *   <li>这个方法是在 {@link Entity#move} 内部被调用的，而 {@code move()} 又处在
-     *       {@code handleMovePlayer} 的调用栈里 —— 那个方法在 {@code move()} 返回后会用
-     *       客户端上报的旧坐标做一次"位置纠偏"，把刚传送走的玩家又拉回来，
-     *       次数却已经扣掉了。所以真正的传送要挪到 tick 末尾，见 {@link PortalTeleports}。</li>
-     *   <li>原版下界门进门前要"蓄力"若干 tick（生存 80 tick = 4 秒），
-     *       计时由 {@link PortalTimers} 负责，这里只负责把它登记进去。</li>
-     * </ol>
+     * <p>只做判定、不改状态 —— {@link com.example.enderportal.block.RemotePortalBlock}
+     * 用它决定要不要把实体登记进原版的 {@code PortalProcessor}。</p>
      */
-    public void onEntityInside(ServerLevel level, Entity entity) {
-        if (!configured) {
-            return;
+    public boolean canAccept(Entity entity) {
+        if (!configured || isRemoved()) {
+            return false;
         }
         // 骑乘状态不传送，免得把坐骑和乘客拆开
         if (entity.isPassenger() || entity.isVehicle()) {
-            return;
+            return false;
         }
-
         UUID actor = actorOf(entity);
         if (leftFor(actor) <= 0) {
-            // 这个人的次数已经用完：不传送，但门本身还开着（由创造者决定何时关闭）
             if (entity instanceof ServerPlayer player && PortalCooldowns.tryHint(entity)) {
                 player.displayClientMessage(Component.translatable("message.enderportal.player_exhausted")
                         .withStyle(ChatFormatting.GRAY), true);
             }
-            PortalTimers.forget(entity);
-            return;
+            return false;
         }
+        return !PortalCooldowns.isOnCooldown(entity);
+    }
 
-        // 刚传送完还有一小段冷却（原版玩家 10 tick）：冷却期间不蓄力，
-        // 否则站在门口会被立刻再送回去
-        if (PortalCooldowns.isOnCooldown(entity)) {
-            PortalTimers.forget(entity);
-            return;
-        }
-
-        // 登记蓄力。够 tick 之后由 PortalTimers 推进来的传送会走 PortalTeleports
-        PortalTimers.enter(this, entity);
+    /**
+     * 原版 {@code PortalProcessor} 蓄满后回调到这里，把传送排进 tick 末尾执行。
+     *
+     * <p>不在这里直接传送：{@code getPortalDestination} 是在实体 tick 的
+     * {@code handlePortal} 里被调用的，而传送要脱离 {@code handleMovePlayer} 的调用栈，
+     * 否则会被客户端上报的旧坐标纠偏拉回来、次数却已经扣掉。</p>
+     */
+    public void requestTeleport(ServerLevel level, Entity entity) {
+        PortalTeleports.enqueue(this, level, entity);
     }
 
     /**

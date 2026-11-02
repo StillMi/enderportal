@@ -37,5 +37,7 @@
   "message.enderportal.target_out_of_range": "Y is outside this world's height range (%s to %s).",
   "tooltip.enderportal.portal_stone.target": "Target: %s, %s, %s",
   "tooltip.enderportal.portal_stone.no_target": "Target: not set (uses the config default)",
-  "tooltip.enderportal.portal_stone.set_hint": "Sneak + right-click to change the target"
+  "tooltip.enderportal.portal_stone.set_hint": "Sneak + right-click to set the target (once only)",
+  "message.enderportal.target_not_supported": "This stone cannot be given a target.",
+  "message.enderportal.target_locked": "This stone already has a target and cannot be changed."
 }

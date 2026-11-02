@@ -64,6 +64,17 @@ public record SetTargetPayload(BlockPos target) implements CustomPacketPayload {
             return;
         }
         ItemStack stack = player.getItemInHand(hand);
+        // 只有能设坐标的石头（末影传送石）才接受这个包
+        if (!(stack.getItem() instanceof AbstractPortalStoneItem stone) || !stone.allowsBinding()) {
+            return;
+        }
+        // 一块石头只能设定一次，不信任客户端、服务端再挡一遍
+        if (AbstractPortalStoneItem.boundTarget(stack) != null) {
+            player.displayClientMessage(
+                    Component.translatable("message.enderportal.target_locked")
+                            .withStyle(ChatFormatting.RED), true);
+            return;
+        }
 
         BlockPos target = payload.target();
         int minY = player.level().getMinBuildHeight();

@@ -11,6 +11,8 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.HorizontalDirectionalBlock;
+import net.minecraft.world.level.block.Portal;
+import net.minecraft.world.level.portal.DimensionTransition;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
@@ -30,7 +32,7 @@ import org.slf4j.Logger;
  * 门面用的是像下界门那样的<b>薄片</b>模型，薄片必须始终贴在门框平面上；
  * 没有这个属性的话，朝东/朝西的门会看到薄片横穿门洞。</p>
  */
-public class RemotePortalBlock extends Block implements EntityBlock {
+public class RemotePortalBlock extends Block implements EntityBlock, Portal {
 
     /** 门面朝向（= 门外方向）。薄片模型按它旋转。 */
     public static final DirectionProperty FACING = HorizontalDirectionalBlock.FACING;
@@ -64,6 +66,36 @@ public class RemotePortalBlock extends Block implements EntityBlock {
         };
     }
 
+    /** 这座门现在愿不愿意接送这个实体（次数、冷却、骑乘都算）。 */
+    private java.util.Optional<RemotePortalBlockEntity> portalAt(ServerLevel level, BlockPos pos) {
+        return level.getBlockEntity(pos) instanceof RemotePortalBlockEntity portal
+                ? java.util.Optional.of(portal) : java.util.Optional.empty();
+    }
+
+    private boolean portalAllows(ServerLevel level, BlockPos pos, Entity entity) {
+        return portalAt(level, pos).map(portal -> portal.canAccept(entity)).orElse(false);
+    }
+
+    @Override
+    public int getPortalTransitionTime(ServerLevel level, Entity entity) {
+        // 与下界门完全一致：读同一批游戏规则
+        // （生存 80 tick / 创造 1 tick / 非玩家 0）
+        return com.example.enderportal.portal.PortalTimers.transitionTicks(level, entity);
+    }
+
+    @Override
+    public Portal.Transition getLocalTransition() {
+        // 客户端据此渲染和下界门一样的 CONFUSION 屏幕特效
+        return Portal.Transition.CONFUSION;
+    }
+
+    @Override
+    public DimensionTransition getPortalDestination(ServerLevel level, Entity entity, BlockPos pos) {
+        // 同维度内挪位置，交给方块实体在 tick 末尾执行（避开 handleMovePlayer 的位置纠偏）
+        portalAt(level, pos).ifPresent(portal -> portal.requestTeleport(level, entity));
+        return null;
+    }
+
     @Override
     public void entityInside(BlockState state, Level level, BlockPos pos, Entity entity) {
         if (level.isClientSide()) {
@@ -72,8 +104,13 @@ public class RemotePortalBlock extends Block implements EntityBlock {
         if (!(level instanceof ServerLevel serverLevel)) {
             return;
         }
-        if (level.getBlockEntity(pos) instanceof RemotePortalBlockEntity portal) {
-            portal.onEntityInside(serverLevel, entity);
+        // 交给原版管线：这一步会建立 PortalProcessor，客户端据此渲染
+        // CONFUSION 特效（镜头旋转 + PORTAL_TRIGGER 环境音），
+        // 服务端则按 getPortalTransitionTime 累计蓄力，
+        // 蓄满后由 getPortalDestination 回调，把传送排进 tick 末尾。
+        // 次数用尽 / 冷却中由 canAccept 拦掉，不登记就不会有特效和倒计时。
+        if (portalAllows(serverLevel, pos, entity)) {
+            entity.setAsInsidePortal(this, pos);
         }
     }
 

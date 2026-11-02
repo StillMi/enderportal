@@ -1,5 +1,6 @@
 package com.example.enderportal.portal;
 
+import com.example.enderportal.Config;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
@@ -34,8 +35,15 @@ import java.util.UUID;
  */
 public final class PortalCooldowns {
 
-    /** 原版玩家传送后的冷却（tick）。 */
-    private static final int PLAYER_COOLDOWN_TICKS = 10;
+    /**
+     * 玩家传送后的冷却（tick）。
+     *
+     * <p>原版 {@code Player#getDimensionChangingDelay()} 是 10 tick，但那是给"换维度"
+     * 用的；我们这里只在同一维度内挪位置，10 tick（半秒）落地还没站稳就能再进，
+     * 体感就是"冷却没生效"。这里取 {@link com.example.enderportal.Config#TELEPORT_DELAY_SECONDS}，
+     * 默认 5 秒，和 v1.08 之前的行为一致。</p>
+     */
+    private static final int PLAYER_COOLDOWN_FALLBACK = 100;
     /** 原版非玩家实体传送后的冷却（tick）。 */
     private static final int OTHER_COOLDOWN_TICKS = 300;
     /** 次数用完时重复提示的间隔（tick）。 */
@@ -74,11 +82,9 @@ public final class PortalCooldowns {
      * <p>玩家是 10；非玩家是 300。骑在玩家身上的实体跟着乘客算（原版也是这么处理的）。</p>
      */
     private static int cooldownTicks(Entity entity) {
-        if (entity instanceof Player) {
-            return PLAYER_COOLDOWN_TICKS;
-        }
-        if (entity.getFirstPassenger() instanceof ServerPlayer) {
-            return PLAYER_COOLDOWN_TICKS;
+        if (entity instanceof Player || entity.getFirstPassenger() instanceof ServerPlayer) {
+            int seconds = Math.max(0, Config.TELEPORT_DELAY_SECONDS.get());
+            return seconds > 0 ? seconds * 20 : PLAYER_COOLDOWN_FALLBACK;
         }
         return OTHER_COOLDOWN_TICKS;
     }

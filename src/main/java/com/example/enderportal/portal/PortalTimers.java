@@ -70,6 +70,15 @@ public final class PortalTimers {
         RemotePortalBlockEntity portal;
         /** 它所在的维度。存下来就不必每 tick 把所有维度都问一遍。 */
         ServerLevel level;
+        /**
+         * 直接持有实体引用。
+         *
+         * <p>以前每 tick 用 {@code level.getEntity(uuid)} 反查，但玩家不在这张表里
+         * （{@code addPlayer} 走的是另一条路径），查回来是 {@code null}，
+         * 于是条目被当成"实体没了"直接删掉 —— 玩家永远蓄不满，既不延迟也不传送。
+         * 现在直接拿引用，只在确认失效时才清。</p>
+         */
+        Entity entity;
     }
 
     private static final Map<UUID, Charge> CHARGES = new HashMap<>();
@@ -125,13 +134,13 @@ public final class PortalTimers {
             UUID id = entry.getKey();
             Charge charge = entry.getValue();
 
-            Entity entity = charge.level == null ? null : charge.level.getEntity(id);
+            Entity entity = charge.entity;
+            // 只认"真的没了"：引用为空、已移除、已死亡。玩家在表里查不到不再算失效。
             if (entity == null || entity.isRemoved() || !entity.isAlive()) {
                 finished.add(id);
                 continue;
             }
-            ServerLevel level = charge.level;
-            if (entity.level() != level) {
+            if (!(entity.level() instanceof ServerLevel level) || level != charge.level) {
                 // 换维度了：这一条的蓄力作废
                 finished.add(id);
                 continue;
@@ -167,7 +176,7 @@ public final class PortalTimers {
      *
      * <p>直接读同一批游戏规则，玩家改规则时这座门跟着变。</p>
      */
-    private static int transitionTicks(ServerLevel level, Entity entity) {
+    public static int transitionTicks(ServerLevel level, Entity entity) {
         if (entity instanceof Player player) {
             // 注意别写成三元表达式：两个分支的泛型不一样，会推断失败
             GameRules.Key<GameRules.IntegerValue> rule;

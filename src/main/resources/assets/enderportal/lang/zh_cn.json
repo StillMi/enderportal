@@ -37,5 +37,7 @@
   "message.enderportal.target_out_of_range": "Y 坐标超出这个世界的高度范围（%s ~ %s）。",
   "tooltip.enderportal.portal_stone.target": "目标坐标：%s, %s, %s",
   "tooltip.enderportal.portal_stone.no_target": "目标坐标：未绑定（使用配置文件默认值）",
-  "tooltip.enderportal.portal_stone.set_hint": "潜行 + 右键可修改目标坐标"
+  "tooltip.enderportal.portal_stone.set_hint": "潜行 + 右键设定坐标（只能设定一次）",
+  "message.enderportal.target_not_supported": "这块石头不能设定坐标。",
+  "message.enderportal.target_locked": "这块石头已经绑定过坐标，不能再改。"
 }

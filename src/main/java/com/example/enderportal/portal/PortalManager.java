@@ -125,18 +125,24 @@ public final class PortalManager {
                 lateral.getStepZ() * lx + front.getStepZ() * lz);
     }
 
-    /** 局部连续坐标 → 世界 X（用于算落点）。 */
+    /**
+     * 局部连续坐标 → 世界 X（用于算落点）。
+     *
+     * <p>必须和 {@link #localPos} 严格对应：{@code origin} 是门底梁左端那个<b>方块</b>，
+     * 所以局部整数 {@code lx / lz} 落到方块<b>中心</b>是 {@code +0.5}，
+     * 而不是"原点本身是 0.5"。曾经把它写成
+     * {@code 0.5 + step * (lx - 0.5)}，朝北 / 朝西时 {@code step = -1}，
+     * 落点会整整偏出一格、落到门背后，玩家一站就又被判定在门里。</p>
+     */
     public static double localX(BlockPos origin, Direction front, double lx, double lz) {
         Direction lateral = front.getCounterClockWise();
-        return origin.getX() + 0.5D + lateral.getStepX() * (lx - 0.5D)
-                + front.getStepX() * (lz - 0.5D);
+        return origin.getX() + 0.5D + lateral.getStepX() * lx + front.getStepX() * lz;
     }
 
-    /** 局部连续坐标 → 世界 Z。 */
+    /** 局部连续坐标 → 世界 Z；换算规则同 {@link #localX}。 */
     public static double localZ(BlockPos origin, Direction front, double lx, double lz) {
         Direction lateral = front.getCounterClockWise();
-        return origin.getZ() + 0.5D + lateral.getStepZ() * (lx - 0.5D)
-                + front.getStepZ() * (lz - 0.5D);
+        return origin.getZ() + 0.5D + lateral.getStepZ() * lx + front.getStepZ() * lz;
     }
 
     /* ------------------------------------------------------------------ */
@@ -1119,13 +1125,12 @@ public final class PortalManager {
 
             BlockState air = Blocks.AIR.defaultBlockState();
             // Clear only the doorway and the two-wide approach. Never excavate a platform.
+            // 只清门洞本身（局部 z=0），不要把门外那格台阶所在的位置也清掉
             for (int lx = 1; lx <= PORTAL_WIDTH; lx++) {
-                for (int lz = 0; lz <= 1; lz++) {
-                    for (int ly = 1; ly <= PORTAL_HEIGHT; ly++) {
-                        BlockPos pos = localPos(origin, front, lx, ly, lz);
-                        if (level.getBlockEntity(pos) == null) {
-                            level.setBlockAndUpdate(pos, air);
-                        }
+                for (int ly = 1; ly <= PORTAL_HEIGHT; ly++) {
+                    BlockPos pos = localPos(origin, front, lx, ly, 0);
+                    if (level.getBlockEntity(pos) == null) {
+                        level.setBlockAndUpdate(pos, air);
                     }
                 }
             }

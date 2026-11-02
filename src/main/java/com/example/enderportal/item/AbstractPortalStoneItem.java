@@ -74,6 +74,21 @@ public abstract class AbstractPortalStoneItem extends Item {
     protected void appendExtraTooltip(List<Component> tooltip, ItemStack stack) {
     }
 
+    /**
+     * 这块石头能不能在游戏里设坐标。
+     *
+     * <p>只有 {@link PortalStoneItem}（末影传送石）可以；地牢传送石的目的地是
+     * "附近的地牢"，由世界决定，玩家改不了，所以那边返回 {@code false}。</p>
+     */
+    protected boolean canBindTarget() {
+        return false;
+    }
+
+    /** 供网络包在其他包内校验用。 */
+    public final boolean allowsBinding() {
+        return canBindTarget();
+    }
+
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
@@ -84,6 +99,23 @@ public abstract class AbstractPortalStoneItem extends Item {
         // ClientHooks 标了 @OnlyIn(CLIENT)，专用服务器上连"执行到这一行"都不要发生，
         // 否则类校验可能提前去加载一个只有客户端才有的类。
         if (player.isShiftKeyDown()) {
+            if (!canBindTarget()) {
+                if (!level.isClientSide()) {
+                    player.displayClientMessage(
+                            Component.translatable("message.enderportal.target_not_supported")
+                                    .withStyle(ChatFormatting.RED), true);
+                }
+                return InteractionResultHolder.fail(stack);
+            }
+            // 一块石头只能设定一次：已经绑过就锁死，不再打开界面
+            if (boundTarget(stack) != null) {
+                if (!level.isClientSide()) {
+                    player.displayClientMessage(
+                            Component.translatable("message.enderportal.target_locked")
+                                    .withStyle(ChatFormatting.RED), true);
+                }
+                return InteractionResultHolder.fail(stack);
+            }
             if (FMLEnvironment.dist == Dist.CLIENT) {
                 ClientHooks.openTargetScreen(hand);
             }

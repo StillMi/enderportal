@@ -38,6 +38,11 @@ public class PortalStoneItem extends AbstractPortalStoneItem {
     }
 
     @Override
+    protected boolean canBindTarget() {
+        return true;
+    }
+
+    @Override
     protected String failureKey(PortalManager.Result result) {
         return switch (result) {
             case NO_GROUND -> "message.enderportal.no_ground";
