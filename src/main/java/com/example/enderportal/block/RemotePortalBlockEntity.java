@@ -4,7 +4,6 @@ import com.example.enderportal.EnderPortal;
 import com.example.enderportal.portal.PortalCooldowns;
 import com.example.enderportal.portal.PortalManager;
 import com.example.enderportal.portal.PortalTeleports;
-import com.example.enderportal.portal.PortalTimers;
 import com.mojang.logging.LogUtils;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
@@ -111,14 +110,6 @@ public class RemotePortalBlockEntity extends BlockEntity {
         this.layoutVersion = 2;
         this.entryStep = entryStep;
         setChanged();
-    }
-
-    /** All six block entities of one entrance share this identity. */
-    public boolean isSameEntrance(RemotePortalBlockEntity other) {
-        return other != null && level == other.level
-                && frameOrigin.equals(other.frameOrigin) && frameFront == other.frameFront
-                && partnerOrigin.equals(other.partnerOrigin) && partnerFront == other.partnerFront
-                && creator.equals(other.creator);
     }
 
     public boolean hasCompactLayout() { return layoutVersion >= 2; }
@@ -272,19 +263,16 @@ public class RemotePortalBlockEntity extends BlockEntity {
         // 这时 configured 还可能是 true（拆门走的是另一份方块实体），
         // 不加这道检查就会把人送到一座已经不存在的门上
         if (!configured || isRemoved() || entity.isRemoved() || !entity.isAlive()) {
-            PortalTimers.reset(entity);
             return;
         }
         // 排队后实体可能已经被别处传走了（比如同一 tick 里进了另一座门），
         // 那就别把它再从新位置拽过来
         if (entity.level() != level) {
-            PortalTimers.reset(entity);
             return;
         }
         // 排队之后可能被别的门先传走了、或者次数刚被用完，这里再确认一次
         UUID actor = actorOf(entity);
         if (leftFor(actor) <= 0) {
-            PortalTimers.reset(entity);
             return;
         }
 
@@ -322,12 +310,10 @@ public class RemotePortalBlockEntity extends BlockEntity {
         if (entity.position().distanceToSqr(tx, ty, tz) > 4.0D) {
             LOGGER.warn("[enderportal] teleport to {} did not take effect for {}, not consuming a use",
                     BlockPos.containing(tx, ty, tz), entity.getName().getString());
-            PortalTimers.reset(entity);
             return;
         }
 
         // 传送真的成功了：清掉蓄力，并按原版下界门的时长开始冷却
-        PortalTimers.reset(entity);
         PortalCooldowns.markPassed(entity);
 
         level.playSound(null, BlockPos.containing(tx, ty, tz), SoundEvents.PORTAL_TRAVEL,

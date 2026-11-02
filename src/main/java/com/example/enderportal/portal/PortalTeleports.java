@@ -68,10 +68,8 @@ public final class PortalTeleports {
      * 也不会因为遍历时修改列表而出问题。</p>
      */
     public static void onServerTickPost(ServerTickEvent.Post event) {
-        // 先推进"站在门里蓄力"的计时，再排干队列 —— 顺序不能反：
-        // 这一 tick 刚好蓄满的实体要能在同一 tick 里被送走，手感才和下界门一致
-        PortalTimers.tickAll(event.getServer());
-
+        // 蓄力已交回原版 PortalProcessor（见 RemotePortalBlock#getPortalTransitionTime），
+        // 这里只负责把已排队的传送在 tick 末尾执行
         if (QUEUE.isEmpty()) {
             return;
         }

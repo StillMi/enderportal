@@ -1,4 +1,12 @@
-# 末影传送石 (Ender Portal Stone) v1.15
+# 末影传送石 (Ender Portal Stone) v1.16
+
+> **v1.16：修好客户端特效登记与内置冷却。**
+> 1. `entityInside` 不再在客户端提前 return —— 原版下界门两端都调
+>    `setAsInsidePortal`，客户端正是靠它建出 `portalProcess` 才有
+>    `CONFUSION` 镜头扭曲和 `PORTAL_TRIGGER` 环境音。
+> 2. 冷却改为直接读写原版 `entity.portalCooldown`，不再维护第二份状态。
+> 3. 冷却期间两端都不登记，避免原版 `setAsInsidePortal` 把冷却无限刷新。
+> 4. 删掉自写的蓄力表，只保留 `transitionTicks` 读数，蓄力交给原版 `PortalProcessor`。
 
 > **v1.15：修冷却失效、坐标限定、接回原版下界门管线。**
 > 1. 修正连续坐标换算（朝北/朝西落点偏一格，落地又踩回门里，像冷却失效）。
@@ -411,7 +419,7 @@ v1.09 的修法：
 1. `File → Open` 选择本目录（`enderportal`），以 Gradle 项目导入。
 2. 等待依赖下载完成（首次会从 `maven.neoforged.net` 拉取 NeoForge）。
 3. 右侧 Gradle 面板 → `Tasks → neoforge runs → runClient` 启动开发客户端。
-4. `Tasks → build → build` 生成 `build/libs/enderportal-1.15.jar`，丢进 `mods/` 即可。
+4. `Tasks → build → build` 生成 `build/libs/enderportal-1.16.jar`，丢进 `mods/` 即可。
 
 ### 方式 B：命令行（Gradle）
 
@@ -427,7 +435,7 @@ Gradle 在某些环境里起不来（`native-platform.dll` 加载失败）时，
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\compile.ps1   # 调 JBR 的 javac 直接编译 -> build\classes
-python tools\package.py                                      # 把 class + 资源打成 jar -> build\libs\enderportal-1.15.jar
+python tools\package.py                                      # 把 class + 资源打成 jar -> build\libs\enderportal-1.16.jar
 ```
 
 > `compile.ps1` 必须带 UTF-8 BOM 保存，否则 Windows PowerShell 5.1 会按 GBK 解析中文注释而报语法错。
@@ -437,9 +445,9 @@ python tools\package.py                                      # 把 class + 资�
 `tools\package.py` 会把 `neoforge.mods.toml` / `pack.mcmeta` 里的 `${...}` 用 `gradle.properties`
 展开，并固定 zip 时间戳，所以同样的输入永远得到同样的 jar（可复现）。
 
-产物：`build/libs/enderportal-1.15.jar`（装到 NeoForge 21.1.x 的 `mods` 目录）。
+产物：`build/libs/enderportal-1.16.jar`（装到 NeoForge 21.1.x 的 `mods` 目录）。
 
-> **本工程已经预置了一个编译好的成品**：`build/libs/enderportal-1.15.jar`
+> **本工程已经预置了一个编译好的成品**：`build/libs/enderportal-1.16.jar`
 > （36 个条目，class 全部是 Java 21 字节码，已用 `javac --release 21` 对真实
 > NeoForge 21.1.72 类路径编译通过，zip 完整性和 class 哈希都已核对）。
 > 重新构建会覆盖它。放到 `.minecraft/mods/` 里、启动 NeoForge 21.1.x 即可加载。
@@ -507,7 +515,7 @@ ModDevGradle 是 NeoForge 官方现在主推的构建插件，插件本体发布
 2. 把 `tools/build.gradle.moddev` 复制成根目录的 `build.gradle`
 3. 重新同步 / `.\gradlew build`
 
-两种构建脚本的产物完全一样（`build/libs/enderportal-1.15.jar`），代码不用改一行。
+两种构建脚本的产物完全一样（`build/libs/enderportal-1.16.jar`），代码不用改一行。
 
 ### 其他常见报错
 

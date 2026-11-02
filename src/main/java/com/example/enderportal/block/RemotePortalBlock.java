@@ -96,19 +96,37 @@ public class RemotePortalBlock extends Block implements EntityBlock, Portal {
         return null;
     }
 
+    /**
+     * 实体压进门面方块时被调用 —— <b>两端都要跑</b>。
+     *
+     * <p>原版 {@code NetherPortalBlock#entityInside} 同样不分客户端/服务端，直接
+     * {@code entity.setAsInsidePortal(this, pos)}。这一步在<b>客户端</b>上建出
+     * {@code portalProcess}，{@code LocalPlayer#getActivePortalLocalTransition()}
+     * 才能读到 {@link Portal.Transition#CONFUSION}，进而渲染镜头扭曲和
+     * {@code PORTAL_TRIGGER} 环境音。<b>只在服务端登记，客户端永远没特效</b> ——
+     * 之前这里有一句 {@code if (level.isClientSide()) return;}，就是特效不出现的原因。</p>
+     *
+     * <p>客户端的 {@code portalProcess} 只影响视觉；真正的传送判定、
+     * 次数和冷却都在服务端做，客户端拦不拦都不影响结果。</p>
+     */
     @Override
     public void entityInside(BlockState state, Level level, BlockPos pos, Entity entity) {
-        if (level.isClientSide()) {
+        // 冷却期间一律不登记。
+        //
+        // 这一条必须放在最前面，而且两端都要查：原版 setAsInsidePortal 的第一句是
+        // {@code if (isOnPortalCooldown()) setPortalCooldown();} —— 它会把冷却
+        // <b>重置回 getDimensionChangingDelay()</b>（玩家 10 tick）。站在门里每 tick
+        // 都被重置，冷却刚减 1 就被打回 10，永远走不完，看起来就是"冷却无限长"。
+        if (entity.isOnPortalCooldown()) {
             return;
         }
+
         if (!(level instanceof ServerLevel serverLevel)) {
+            // 客户端：只为特效登记（CONFUSION + PORTAL_TRIGGER），不做任何服务端校验
+            entity.setAsInsidePortal(this, pos);
             return;
         }
-        // 交给原版管线：这一步会建立 PortalProcessor，客户端据此渲染
-        // CONFUSION 特效（镜头旋转 + PORTAL_TRIGGER 环境音），
-        // 服务端则按 getPortalTransitionTime 累计蓄力，
-        // 蓄满后由 getPortalDestination 回调，把传送排进 tick 末尾。
-        // 次数用尽 / 冷却中由 canAccept 拦掉，不登记就不会有特效和倒计时。
+        // 服务端：次数用尽由 canAccept 拦掉，不登记就不会蓄力
         if (portalAllows(serverLevel, pos, entity)) {
             entity.setAsInsidePortal(this, pos);
         }

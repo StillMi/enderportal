@@ -1,74 +1,37 @@
 package com.example.enderportal.portal;
 
 import com.example.enderportal.Config;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.player.Player;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
 /**
- * 传送<b>之后</b>的冷却，数值对齐原版下界门。
+ * 传送冷却与提示节流。
  *
- * <h2>原版怎么算的</h2>
+ * <h2>冷却直接写在原版字段上</h2>
  *
- * <p>传送完成时 {@code Entity#setPortalCooldown()} 会把 {@code portalCooldown} 设成
- * {@code getDimensionChangingDelay()}：</p>
+ * <p>不再自己维护一张表 —— 那样有两份状态，客户端和服务端、排队前后都可能不一致。
+ * 现在用原版的 {@code Entity#setPortalCooldown(int)}：它写的就是
+ * {@code entity.portalCooldown}，由 {@code Entity#processPortalCooldown()} 每 tick 递减，
+ * 而 {@code setAsInsidePortal} 第一件事就是检查 {@link Entity#isOnPortalCooldown()}，
+ * 冷却期间<b>原版直接拒绝登记</b>，连特效和蓄力都不会开始。</p>
  *
- * <table border="1">
- *   <caption>原版冷却时长</caption>
- *   <tr><th>对象</th><th>tick</th><th>来源</th></tr>
- *   <tr><td>玩家</td><td>10</td><td>{@code Player#getDimensionChangingDelay()}</td></tr>
- *   <tr><td>非玩家</td><td>300</td><td>{@code Entity} 里的硬编码</td></tr>
- * </table>
+ * <p>时长取 {@link Config#TELEPORT_DELAY_SECONDS}（默认 5 秒）。原版玩家是 10 tick，
+ * 但那是给跨维度用的；同维度挪位置时半秒就又能进，体感等于没有冷却。</p>
  *
- * <p>注意 300 那一档是给非玩家的；原版<b>玩家</b>传完只锁 10 tick（半秒）。
- * 之前这里是自己拍的 5 秒，和下界门不一致，现在按原版走。</p>
- *
- * <p>另外还管一条"提示冷却"：个人次数用完时玩家站在门里会每 tick 触发一次判定，
- * 没有节流的话动作栏会被刷屏。</p>
- *
- * <p>只在服务端主线程被调用，所以用普通 {@link Map}；跨线程没有任何收益，
- * 反而多一层内存屏障。</p>
+ * <p>提示节流仍用一张小表：次数用完时玩家站在门里会每 tick 触发，不节流会刷屏。</p>
  */
 public final class PortalCooldowns {
 
-    /**
-     * 玩家传送后的冷却（tick）。
-     *
-     * <p>原版 {@code Player#getDimensionChangingDelay()} 是 10 tick，但那是给"换维度"
-     * 用的；我们这里只在同一维度内挪位置，10 tick（半秒）落地还没站稳就能再进，
-     * 体感就是"冷却没生效"。这里取 {@link com.example.enderportal.Config#TELEPORT_DELAY_SECONDS}，
-     * 默认 5 秒，和 v1.08 之前的行为一致。</p>
-     */
-    private static final int PLAYER_COOLDOWN_FALLBACK = 100;
-    /** 原版非玩家实体传送后的冷却（tick）。 */
-    private static final int OTHER_COOLDOWN_TICKS = 300;
     /** 次数用完时重复提示的间隔（tick）。 */
     private static final int HINT_TICKS = 40;
     private static final int MAX_ENTRIES = 8192;
 
-    /** 同一实体两个计时戳，省掉两张表各自清理。 */
-    private static final class Stamps {
-        long pass = Long.MIN_VALUE;
-        long hint = Long.MIN_VALUE;
-    }
-
-    /**
-     * 冷却表，按<b>最久未使用</b>淘汰。
-     *
-     * <p>以前是"超过上限就整表 clear()"。多人服务器跑久了会撞上这个上限，
-     * 而 clear() 的一瞬间<b>所有人的冷却和提示节流全部归零</b> ——
-     * 正站在门口的人立刻又能被传送一次。单人几乎碰不到，多人跑一天就可能。</p>
-     *
-     * <p>现在用访问序的 {@link LinkedHashMap}：超过上限只淘汰最久没被碰过的那一条，
-     * 其他人的计时戳不受影响。</p>
-     */
-    private static final Map<UUID, Stamps> STAMPS = new LinkedHashMap<>(256, 0.75F, true) {
+    private static final Map<UUID, Long> HINTS = new LinkedHashMap<>(256, 0.75F, true) {
         @Override
-        protected boolean removeEldestEntry(Map.Entry<UUID, Stamps> eldest) {
+        protected boolean removeEldestEntry(Map.Entry<UUID, Long> eldest) {
             return size() > MAX_ENTRIES;
         }
     };
@@ -76,87 +39,40 @@ public final class PortalCooldowns {
     private PortalCooldowns() {
     }
 
-    /**
-     * 这个实体传送完要锁多少 tick —— 照抄原版 {@code getDimensionChangingDelay()}。
-     *
-     * <p>玩家是 10；非玩家是 300。骑在玩家身上的实体跟着乘客算（原版也是这么处理的）。</p>
-     */
-    private static int cooldownTicks(Entity entity) {
-        if (entity instanceof Player || entity.getFirstPassenger() instanceof ServerPlayer) {
-            int seconds = Math.max(0, Config.TELEPORT_DELAY_SECONDS.get());
-            return seconds > 0 ? seconds * 20 : PLAYER_COOLDOWN_FALLBACK;
-        }
-        return OTHER_COOLDOWN_TICKS;
+    /** 配置里的冷却时长（tick）；0 表示退回原版玩家的 10 tick。 */
+    private static int cooldownTicks() {
+        int seconds = Math.max(0, Config.TELEPORT_DELAY_SECONDS.get());
+        return seconds > 0 ? seconds * 20 : 10;
     }
 
-    private static Stamps stampsOf(UUID id) {
-        return STAMPS.computeIfAbsent(id, key -> new Stamps());
-    }
-
-    /** 还在冷却里吗（只读，不改状态）。 */
+    /** 还在冷却里吗 —— 直接问原版字段。 */
     public static boolean isOnCooldown(Entity entity) {
-        Stamps stamps = STAMPS.get(entity.getUUID());
-        if (stamps == null) {
-            return false;
-        }
-        long elapsed = Stamp.elapsed(entity.level().getGameTime(), stamps.pass);
-        return elapsed < cooldownTicks(entity);
+        return entity.isOnPortalCooldown();
     }
 
-    /** 记一次传送，开始冷却。传送真正成功之后才调用。 */
+    /** 传送成功后开始冷却 —— 写原版字段，原版每 tick 自己递减。 */
     public static void markPassed(Entity entity) {
-        stampsOf(entity.getUUID()).pass = entity.level().getGameTime();
+        entity.setPortalCooldown(cooldownTicks());
     }
 
-    /** 还剩多少 tick 才能再传，仅用于提示。 */
+    /** 还剩多少 tick，仅用于提示。 */
     public static int remainingTicks(Entity entity) {
-        Stamps stamps = STAMPS.get(entity.getUUID());
-        if (stamps == null) {
-            return 0;
-        }
-        long elapsed = Stamp.elapsed(entity.level().getGameTime(), stamps.pass);
-        return (int) Math.max(0, cooldownTicks(entity) - elapsed);
+        return Math.max(0, entity.getPortalCooldown());
     }
 
-    /**
-     * 撤销一次冷却。
-     *
-     * <p>用于"已经排好队、但传送最终没发生"的情况（门被拆了、实体被别处传走等）。
-     * 不撤销的话玩家会白等一个冷却周期却什么也没发生。</p>
-     */
+    /** 撤销冷却（排了队但最终没传成时用）。 */
     public static void releasePass(Entity entity) {
-        Stamps stamps = STAMPS.get(entity.getUUID());
-        if (stamps != null) {
-            stamps.pass = Long.MIN_VALUE;
-        }
+        entity.setPortalCooldown(0);
     }
 
-    /**
-     * 提示节流：同一实体 {@link #HINT_TICKS} tick 内只提示一次。
-     *
-     * @return {@code true} 表示这次应该提示
-     */
+    /** 提示节流：同一实体 {@link #HINT_TICKS} tick 内只提示一次。 */
     public static boolean tryHint(Entity entity) {
         long now = entity.level().getGameTime();
-        Stamps stamps = stampsOf(entity.getUUID());
-        if (Stamp.elapsed(now, stamps.hint) < HINT_TICKS) {
+        Long last = HINTS.get(entity.getUUID());
+        if (last != null && now - last < HINT_TICKS) {
             return false;
         }
-        stamps.hint = now;
+        HINTS.put(entity.getUUID(), now);
         return true;
-    }
-
-    /** 时间戳运算：从未设过时返回一个足够大的数，让调用方自然放行。 */
-    private static final class Stamp {
-        private Stamp() {
-        }
-
-        static long elapsed(long now, long since) {
-            if (since == Long.MIN_VALUE) {
-                return Long.MAX_VALUE;
-            }
-            // 跨维或者 /time set 让 gameTime 回退过也不会算出负数
-            return Math.max(0, now - since);
-        }
     }
 }
